@@ -92,6 +92,9 @@ def translate_request(
         merged_tools, effective_tool_choice, tool_registry
     )
     response_format = build_response_format(request)
+    reasoning = getattr(request, "reasoning", None)
+    if reasoning is not None and not isinstance(reasoning, dict):
+        raise ValueError("reasoning must be an object")
 
     chat_request = ChatCompletionRequest(
         model=resolve_model(request.model, model_map),
@@ -105,6 +108,7 @@ def translate_request(
         temperature=request.temperature,
         top_p=request.top_p,
         verbosity=request.verbosity,
+        reasoning=reasoning,
         response_format=response_format,
         stream=request.stream,
     )
@@ -187,6 +191,7 @@ def input_items_to_messages(
         return [ChatMessage(role="user", content=input_value)]
 
     messages: list[ChatMessage] = []
+    pending_reasoning_details: list[dict[str, Any]] = []
     for raw_item in input_value:
         item = (
             raw_item
@@ -197,10 +202,23 @@ def input_items_to_messages(
             content = item.content
             if not isinstance(content, (str, list, dict)):
                 content = json_dumps(content)
-            messages.append(ChatMessage(role=item.role, content=content))
+            msg = ChatMessage(role=item.role, content=content)
+            if msg.role == "assistant" and pending_reasoning_details:
+                msg.reasoning_details = list(pending_reasoning_details)
+                pending_reasoning_details.clear()
+            messages.append(msg)
             continue
 
         item_type = item.type or ""
+        if item_type == "reasoning":
+            data = item.model_dump()
+            raw_details = data.get("openrouter_reasoning_details")
+            if isinstance(raw_details, list):
+                for detail in raw_details:
+                    if isinstance(detail, dict):
+                        pending_reasoning_details.append(detail)
+            continue
+
         if item_type == "function_call":
             _append_tool_call(
                 messages,
@@ -213,6 +231,9 @@ def input_items_to_messages(
                     ),
                 ),
             )
+            if pending_reasoning_details and messages and messages[-1].role == "assistant":
+                messages[-1].reasoning_details = list(pending_reasoning_details)
+                pending_reasoning_details.clear()
             continue
 
         if item_type == "function_call_output":
@@ -241,6 +262,9 @@ def input_items_to_messages(
                     ),
                 ),
             )
+            if pending_reasoning_details and messages and messages[-1].role == "assistant":
+                messages[-1].reasoning_details = list(pending_reasoning_details)
+                pending_reasoning_details.clear()
             continue
 
         if item_type.endswith("_call_output"):

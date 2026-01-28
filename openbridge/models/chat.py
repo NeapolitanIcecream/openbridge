@@ -33,6 +33,10 @@ class ChatMessage(BaseModel):
     tool_calls: list[ChatToolCall] | None = None
     tool_call_id: str | None = None
     name: str | None = None
+    reasoning: str | None = None
+    reasoning_details: list[dict[str, Any]] | None = None
+
+    model_config = ConfigDict(extra="allow")
 
 
 class ChatCompletionRequest(BaseModel):
@@ -45,6 +49,7 @@ class ChatCompletionRequest(BaseModel):
     temperature: float | None = None
     top_p: float | None = None
     verbosity: str | None = None
+    reasoning: dict[str, Any] | None = None
     response_format: dict[str, Any] | None = None
     stream: bool | None = None
 

@@ -124,7 +124,7 @@ openbridge/
 - `type:"function_call"`：转成 assistant message 的 `tool_calls`（content 置空）。
 - `type:"function_call_output"`：转成 `role:"tool"` message，`tool_call_id=call_id`，`content=output`（若非 string 则 JSON 序列化）。
 - `type:"*_call"` / `type:"*_call_output"`：当作“非 function 的工具协议项”，通过 **工具虚拟化**映射到 function tool 的 `tool_calls`/`role:"tool"`（具体映射由工具注册表决定）。
-- `type:"reasoning"` 等无同构内容：默认忽略或仅用于中间层内部状态，不写入 messages（避免污染上下文）。
+- `type:"reasoning"` items: preserve for reasoning+tools continuity when possible (e.g., via OpenRouter `message.reasoning_details[]` round-trip), but never stringify into normal message content. If passthrough is not supported, ignore to avoid polluting the prompt.
 
 #### 6.3 `tools` 与工具虚拟化（重点）
 

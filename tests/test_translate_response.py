@@ -49,6 +49,43 @@ def test_chat_response_with_text_only():
     assert responses.usage["prompt_tokens"] == 10
 
 
+def test_chat_response_with_reasoning_details():
+    tool_map = ToolVirtualizationResult(
+        chat_tools=[], function_name_map={}, external_name_map={}
+    )
+    chat_response = ChatCompletionResponse(
+        choices=[
+            ChatCompletionChoice(
+                message=ChatMessage(
+                    role="assistant",
+                    content="Hello!",
+                    reasoning_details=[
+                        {
+                            "type": "reasoning.summary",
+                            "summary": "Chose a short greeting.",
+                            "id": "reasoning-summary-1",
+                            "format": "openrouter-v1",
+                            "index": 0,
+                        }
+                    ],
+                )
+            )
+        ]
+    )
+
+    responses = chat_response_to_responses(
+        chat_response, model="test/model", tool_map=tool_map
+    )
+
+    assert len(responses.output) == 2
+    assert responses.output[0].type == "reasoning"
+    data = responses.output[0].model_dump()
+    assert data["openrouter_reasoning_details"][0]["id"] == "reasoning-summary-1"
+    assert data["summary"][0]["type"] == "summary_text"
+    assert data["summary"][0]["text"] == "Chose a short greeting."
+    assert responses.output[1].type == "message"
+
+
 def test_chat_response_with_tool_calls():
     """Test converting a chat response with tool calls (unmapped function)."""
     tool_map = ToolVirtualizationResult(

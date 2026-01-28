@@ -10,6 +10,7 @@ It bridges the gap between stateful, tool-centric clients (like AI agents) and t
 - **Tool Calling Support**: Full support for function calling and tool loops. Automatically virtualizes built-in tools (like `apply_patch`) as standard function tools.
 - **Streaming**: Robust Server-Sent Events (SSE) translation, converting Chat Completions chunks into Responses API events (e.g., `output_text.delta`, `output_item.added`).
 - **Structured Outputs**: Supports `json_schema` for reliable, structured data extraction.
+- **Reasoning Passthrough (Best-effort)**: If the upstream model emits OpenRouter `reasoning_details`, OpenBridge returns a Responses `reasoning` item and replays it across tool-loop turns. Optimized for `gpt-5.2-codex`; other models/providers may omit reasoning details entirely.
 - **Optional State Management**: Implements `previous_response_id` support using a configurable backend (Memory or Redis), enabling stateful conversations on top of stateless upstream APIs.
 
 ## Quick Start

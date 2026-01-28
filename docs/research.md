@@ -26,6 +26,7 @@
     - 注：若你希望语义一致（始终走 “tool loop” 而不是 provider 特判路径），建议把 `web_search` 也做成 function 虚拟化，不依赖 `tools:[{type:"web_search"}]` 的 server-side 行为。
   - **`conversation` 与 `previous_response_id` 的语义**：Responses 原生支持会话状态；而 OpenRouter Chat Completions 是无状态，需要中间层 **自己存会话** 才能兼容（或强制客户端每次传全量历史）。
   - **Responses 的 `include` 扩展字段（如 logprobs、web_search sources、encrypted reasoning 等）**：Chat Completions 端不一定能提供同等粒度；多数只能忽略/降级。
+    - Note: OpenRouter Chat Completions exposes non-standard reasoning fields (`reasoning`, `reasoning_details`) that can partially cover OpenAI Responses reasoning passthrough for supported models. See §3.4.
 
 ### 3. 两边 API 关键事实（来自官方文档）
 
@@ -89,6 +90,41 @@ OpenRouter 文档明确：
 
 来源：OpenRouter Responses API Beta `https://openrouter.ai/docs/api/reference/responses`
 
+#### 3.4 OpenRouter reasoning passthrough (Chat Completions extension)
+
+OpenRouter extends the OpenAI-compatible Chat Completions schema with a unified `reasoning` config and additional response fields. This makes **reasoning round-trip** (and "keep reasoning items in context") feasible *even if you only use* `/api/v1/chat/completions`.
+
+- **Request shape**
+  - Preferred: top-level `reasoning` object (OpenRouter-normalized across providers)
+  - Also supported by some SDK patterns: `extra_body.reasoning` (useful when the OpenAI SDK does not expose non-standard fields directly)
+  - Common knobs include:
+    - `reasoning.effort` (e.g. `low|medium|high`, model-dependent)
+    - `reasoning.max_tokens` (budget for reasoning tokens, model-dependent)
+  - Docs: `https://openrouter.ai/docs/best-practices/reasoning-tokens`
+
+- **Response fields (non-stream)**
+  - `choices[].message.reasoning` (optional string)
+  - `choices[].message.reasoning_details[]` (optional array)
+  - `reasoning_details[].type` can be:
+    - `reasoning.summary` (contains `summary`)
+    - `reasoning.text` (contains raw `text`, optional `signature`)
+    - `reasoning.encrypted` (contains base64 `data`)
+  - Docs: `https://openrouter.ai/docs/best-practices/reasoning-tokens` and `https://openrouter.ai/docs/api-reference/chat-completion`
+
+- **Response fields (stream)**
+  - `choices[].delta.reasoning_details[]` may appear in SSE chunks.
+  - Docs: `https://openrouter.ai/docs/best-practices/reasoning-tokens`
+
+- **Token accounting**
+  - `usage.completion_tokens_details.reasoning_tokens` may be present for models that expose reasoning token usage.
+  - Docs: `https://openrouter.ai/docs/api-reference/chat-completion`
+
+Important caveats:
+
+- Some models/providers (notably OpenAI o-series) may **use** reasoning internally but **do not return** reasoning tokens/text in the response. OpenRouter documents this explicitly.
+- For tool calling continuity, OpenRouter recommends preserving and replaying `reasoning_details` blocks **unchanged and in the exact order** they were emitted. This aligns with OpenAI's recommendation to "keep reasoning items in context" for function calling (Responses API):
+  - OpenAI reasoning guide: `https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context`
+
 ### 4. “Responses → ChatCompletions” 中间层：字段与语义映射
 
 下面以 **“中间层对外完全模拟 OpenAI Responses API”** 为目标，给出可落地映射方案。
@@ -112,6 +148,7 @@ OpenRouter 文档明确：
 | `max_output_tokens` | `max_tokens` | 语义接近；直接映射。 |
 | `temperature`,`top_p` | 同名 | 直接透传。 |
 | `verbosity` | `verbosity` | 若客户端传了则**透传**；provider 不支持时可能忽略或报错，工程上可选择白名单、或在失败时降级为“删除该字段重试”。 |
+| `reasoning` | `reasoning` (or `extra_body.reasoning`) | OpenAI Responses has a first-class `reasoning` object (e.g. `effort`, optional `summary`). OpenRouter Chat Completions also supports a normalized `reasoning` config and can return `reasoning_details` for some models. **Model-dependent**: some models may not return reasoning content even when reasoning is enabled. |
 | `text.format` (structured outputs) | `response_format` | 需要把 Responses 的 `text.format` 映射到 OpenRouter 的 `response_format`（见 4.5）。 |
 | `stream` | `stream` | 都支持 SSE；但事件协议不同，需要转写（见 4.6）。 |
 
@@ -155,8 +192,14 @@ for each item in responses_input_items:
       { role:"tool", tool_call_id: item.call_id, content: (tool_output_from(item) if tool_output_from(item) is string else json.dumps(tool_output_from(item))) }
 
   else if item.type == "reasoning":
-    // Responses 要求 reasoning models 时可能要回传，但 ChatCompletions 无同构
-    // 建议：忽略（或仅用于中间层内部 state），避免污染 messages
+    // OpenAI Responses may return `type:"reasoning"` output items (summary/encrypted_content) for reasoning models.
+    // OpenRouter Chat Completions can carry similar information via `message.reasoning_details[]`.
+    //
+    // Recommendation:
+    // - Preserve reasoning items for tool-calling continuity (stateful mode: store+replay; stateless mode: require client to send them back).
+    // - Do NOT stringify reasoning into normal message content (it will pollute the prompt).
+    // - If you do not support reasoning passthrough, you may ignore them safely (but some reasoning+tools workflows can degrade).
+    preserve_reasoning_for_next_turn(item)
     continue
 
   else:
@@ -289,6 +332,7 @@ OpenAI Responses 的 `include` 可以要求返回更多细节（如 logprobs、w
 
 - **显式忽略** `include` 并在响应 `metadata` 中回写“已忽略的 include 列表”
 - 或 **只支持子集**（例如 OpenRouter 若支持 logprobs 时再映射）
+  - For reasoning models, consider supporting the reasoning-related subset by mapping OpenRouter `message.reasoning_details[]` to Responses `type:"reasoning"` items (summary/encrypted content), when available. This is model/provider-dependent (and may be absent for OpenAI o-series).
 
 ### 6. 推荐的中间层形态（工程落地建议）
 

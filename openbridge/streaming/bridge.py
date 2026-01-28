@@ -80,6 +80,10 @@ class ResponsesStreamTranslator:
         self._text_output_index: int | None = None
         self._text_content: str = ""
         self._tool_calls: dict[int, ToolCallState] = {}
+        self._reasoning_output_index: int | None = None
+        self._reasoning_detail_order: list[str] = []
+        self._reasoning_detail_map: dict[str, dict[str, Any]] = {}
+        self._assistant_reasoning: str | None = None
 
     def start_events(self) -> list[dict[str, Any]]:
         response = self._build_response()
@@ -98,10 +102,38 @@ class ResponsesStreamTranslator:
                 events.extend(self._handle_text_delta(delta["content"]))
             if "tool_calls" in delta and delta["tool_calls"]:
                 events.extend(self._handle_tool_call_deltas(delta["tool_calls"]))
+            if "reasoning_details" in delta and delta["reasoning_details"]:
+                events.extend(self._handle_reasoning_details(delta["reasoning_details"]))
+            if "reasoning" in delta and delta["reasoning"] is not None:
+                # Some providers may emit a free-form reasoning string. Preserve it for round-trip.
+                value = delta["reasoning"]
+                if isinstance(value, str) and value:
+                    self._assistant_reasoning = (
+                        (self._assistant_reasoning or "") + value
+                    ) or None
         return events
 
     def finish_events(self) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
+        if self._reasoning_output_index is not None:
+            item = self._output_items[self._reasoning_output_index]
+            details = self._final_reasoning_details()
+            if details:
+                setattr(item, "openrouter_reasoning_details", details)
+                summary_parts = self._reasoning_details_to_summary(details)
+                if summary_parts:
+                    setattr(item, "summary", summary_parts)
+            if self._assistant_reasoning:
+                setattr(item, "openrouter_reasoning", self._assistant_reasoning)
+            events.append(
+                _event(
+                    "response.output_item.done",
+                    ResponseOutputItemDoneEvent(
+                        output_index=self._reasoning_output_index, item=item
+                    ).model_dump(),
+                )
+            )
+
         if self._text_output_index is not None:
             events.append(
                 _event(
@@ -185,13 +217,20 @@ class ResponsesStreamTranslator:
                 )
             )
         content = self._text_content or None
-        if not tool_calls and not content:
+        reasoning_details = self._final_reasoning_details()
+        reasoning = self._assistant_reasoning
+        if not tool_calls and not content and not reasoning_details and not reasoning:
             return None
-        return ChatMessage(
+        msg = ChatMessage(
             role="assistant",
             content=content,
             tool_calls=tool_calls or None,
         )
+        if reasoning_details:
+            msg.reasoning_details = reasoning_details
+        if reasoning:
+            msg.reasoning = reasoning
+        return msg
 
     def final_response(self) -> ResponsesCreateResponse:
         return self._build_response()
@@ -274,6 +313,68 @@ class ResponsesStreamTranslator:
 
             events.extend(self._maybe_emit_tool_call_item_added(state))
         return events
+
+    def _handle_reasoning_details(self, details: Any) -> list[dict[str, Any]]:
+        if not isinstance(details, list):
+            return []
+
+        events: list[dict[str, Any]] = []
+        if self._reasoning_output_index is None:
+            item = ResponseOutputItem(id=new_id("item"), type="reasoning")
+            self._reasoning_output_index = len(self._output_items)
+            self._output_items.append(item)
+            events.append(
+                _event(
+                    "response.output_item.added",
+                    ResponseOutputItemAddedEvent(
+                        output_index=self._reasoning_output_index, item=item
+                    ).model_dump(),
+                )
+            )
+
+        for detail in details:
+            if not isinstance(detail, dict):
+                continue
+            raw_id = detail.get("id")
+            if isinstance(raw_id, str) and raw_id:
+                key = raw_id
+            else:
+                key = f"{detail.get('type')}:{detail.get('index')}"
+            if key not in self._reasoning_detail_map:
+                self._reasoning_detail_order.append(key)
+                self._reasoning_detail_map[key] = dict(detail)
+                continue
+            existing = self._reasoning_detail_map[key]
+            for k, v in detail.items():
+                if v is None:
+                    continue
+                existing[k] = v
+
+        return events
+
+    def _final_reasoning_details(self) -> list[dict[str, Any]]:
+        if not self._reasoning_detail_order:
+            return []
+        return [
+            self._reasoning_detail_map[key]
+            for key in self._reasoning_detail_order
+            if key in self._reasoning_detail_map
+        ]
+
+    def _reasoning_details_to_summary(
+        self, details: list[dict[str, Any]]
+    ) -> list[dict[str, str]]:
+        summary_parts: list[dict[str, str]] = []
+        for detail in details:
+            if (
+                detail.get("type") == "reasoning.summary"
+                and isinstance(detail.get("summary"), str)
+                and detail.get("summary")
+            ):
+                summary_parts.append(
+                    {"type": "summary_text", "text": str(detail["summary"])}
+                )
+        return summary_parts
 
     def _maybe_emit_tool_call_item_added(
         self, state: ToolCallState
