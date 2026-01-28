@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     openbridge_host: str = Field("127.0.0.1", alias="OPENBRIDGE_HOST")
     openbridge_port: int = Field(8000, alias="OPENBRIDGE_PORT")
     openbridge_log_level: str = Field("INFO", alias="OPENBRIDGE_LOG_LEVEL")
+    openbridge_ssl_certfile: Path | None = Field(None, alias="OPENBRIDGE_SSL_CERTFILE")
+    openbridge_ssl_keyfile: Path | None = Field(None, alias="OPENBRIDGE_SSL_KEYFILE")
+    openbridge_ssl_keyfile_password: str | None = Field(
+        None, alias="OPENBRIDGE_SSL_KEYFILE_PASSWORD"
+    )
     openbridge_state_backend: Literal["memory", "redis", "disabled"] = Field(
         "memory",
         alias="OPENBRIDGE_STATE_BACKEND",
@@ -76,6 +81,20 @@ class Settings(BaseSettings):
         if not value:
             return []
         return [item.strip() for item in value.split(",") if item.strip()]
+
+    @model_validator(mode="after")
+    def _validate_tls_settings(self) -> "Settings":
+        cert = self.openbridge_ssl_certfile
+        key = self.openbridge_ssl_keyfile
+        if (cert is None) ^ (key is None):
+            raise ValueError(
+                "OPENBRIDGE_SSL_CERTFILE and OPENBRIDGE_SSL_KEYFILE must be set together"
+            )
+        if cert is not None and not cert.exists():
+            raise ValueError(f"OPENBRIDGE_SSL_CERTFILE not found: {cert}")
+        if key is not None and not key.exists():
+            raise ValueError(f"OPENBRIDGE_SSL_KEYFILE not found: {key}")
+        return self
 
 
 _settings: Settings | None = None

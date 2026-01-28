@@ -12,6 +12,9 @@ Notes:
 - OpenBridge must be running (default: http://127.0.0.1:8000).
 - OpenBridge server must be configured with OPENROUTER_API_KEY so it can reach upstream.
 - This script does NOT execute any tool; it only simulates tool output.
+- If your client uses https:// against an HTTP OpenBridge server, the server will log
+  `Invalid HTTP request received.` and the client will disconnect. Use an http:// base URL
+  or enable TLS on OpenBridge.
 
 Usage:
   uv run python docs/openbridge_responses_proxy_probe.py
@@ -27,6 +30,7 @@ import os
 import sys
 from dataclasses import dataclass
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
 import httpx
 from loguru import logger
@@ -86,14 +90,40 @@ def _headers(client_api_key: str | None) -> dict[str, str]:
     return {"authorization": f"Bearer {client_api_key}", "content-type": "application/json"}
 
 
-def _require_server_up(base_url: str, headers: dict[str, str], timeout_s: float) -> None:
+def _require_server_up(
+    base_url: str, headers: dict[str, str], timeout_s: float, *, verify: bool
+) -> None:
     url = _join_url(base_url, "/healthz")
     try:
-        with httpx.Client(timeout=timeout_s) as client:
+        with httpx.Client(timeout=timeout_s, verify=verify) as client:
             r = client.get(url, headers=headers)
         if r.status_code != 200:
             raise RuntimeError(f"/healthz returned {r.status_code}: {r.text}")
     except Exception as exc:  # noqa: BLE001
+        parsed = urlparse(base_url)
+        if (
+            parsed.scheme == "https"
+            and parsed.hostname in ("127.0.0.1", "localhost")
+            and parsed.port is not None
+        ):
+            http_base_url = base_url.replace("https://", "http://", 1)
+            http_url = _join_url(http_base_url, "/healthz")
+            try:
+                with httpx.Client(timeout=timeout_s) as client:
+                    r2 = client.get(http_url, headers=headers)
+                if r2.status_code == 200:
+                    raise SystemExit(
+                        "OpenBridge is reachable via HTTP, but you are using an HTTPS base URL.\n\n"
+                        f"Try:\n  --base-url {http_base_url}\n\n"
+                        "Or enable TLS on OpenBridge by setting:\n"
+                        "  OPENBRIDGE_SSL_CERTFILE\n"
+                        "  OPENBRIDGE_SSL_KEYFILE\n"
+                        "  OPENBRIDGE_SSL_KEYFILE_PASSWORD (optional)\n\n"
+                        f"Root cause: {exc}"
+                    ) from exc
+            except Exception:  # noqa: BLE001
+                # Ignore fallback failures; report the original error below.
+                pass
         raise SystemExit(
             "OpenBridge is not reachable.\n\n"
             "Start the server in another terminal:\n"
@@ -132,10 +162,11 @@ def _responses_create(
     base_url: str,
     headers: dict[str, str],
     timeout_s: float,
+    verify: bool,
     payload: dict[str, Any],
 ) -> tuple[httpx.Response, dict[str, Any]]:
     url = _join_url(base_url, "/v1/responses")
-    with httpx.Client(timeout=timeout_s) as client:
+    with httpx.Client(timeout=timeout_s, verify=verify) as client:
         r = client.post(url, headers=headers, json=payload)
     try:
         data = r.json()
@@ -149,6 +180,7 @@ def _responses_create_stream(
     base_url: str,
     headers: dict[str, str],
     timeout_s: float,
+    verify: bool,
     payload: dict[str, Any],
 ) -> tuple[httpx.Response, list[dict[str, Any]]]:
     """
@@ -162,7 +194,7 @@ def _responses_create_stream(
     """
     url = _join_url(base_url, "/v1/responses")
     events: list[dict[str, Any]] = []
-    with httpx.Client(timeout=timeout_s) as client:
+    with httpx.Client(timeout=timeout_s, verify=verify) as client:
         with client.stream("POST", url, headers=headers, json=payload) as r:
             event_name: str | None = None
             data_lines: list[str] = []
@@ -351,6 +383,11 @@ def _main(argv: list[str]) -> int:
         default=DEFAULT_SHELL_COMMAND,
         help="Shell command used when --tool shell.",
     )
+    parser.add_argument(
+        "--tls-insecure",
+        action="store_true",
+        help="Disable TLS verification (useful with https://127.0.0.1 and self-signed certs).",
+    )
     parser.add_argument("--print-requests", action="store_true", help="Print request JSON payloads")
     parser.add_argument("--log-level", default="INFO", help="Loguru level (INFO/DEBUG/...)")
     args = parser.parse_args(argv)
@@ -359,7 +396,8 @@ def _main(argv: list[str]) -> int:
 
     base_url = str(args.base_url)
     headers = _headers(args.client_api_key)
-    _require_server_up(base_url, headers, args.timeout)
+    verify = not bool(args.tls_insecure)
+    _require_server_up(base_url, headers, args.timeout, verify=verify)
 
     patch = DEFAULT_PATCH
     if args.patch_file:
@@ -381,7 +419,11 @@ def _main(argv: list[str]) -> int:
 
     if args.stream:
         r1, events1 = _responses_create_stream(
-            base_url=base_url, headers=headers, timeout_s=args.timeout, payload=req1
+            base_url=base_url,
+            headers=headers,
+            timeout_s=args.timeout,
+            verify=verify,
+            payload=req1,
         )
         _print_http_summary("Response #1 (stream)", r1)
         if r1.status_code >= 400:
@@ -395,7 +437,13 @@ def _main(argv: list[str]) -> int:
         if not isinstance(data1, dict):
             raise SystemExit("Invalid response.completed payload: missing data.response")
     else:
-        r1, data1 = _responses_create(base_url=base_url, headers=headers, timeout_s=args.timeout, payload=req1)
+        r1, data1 = _responses_create(
+            base_url=base_url,
+            headers=headers,
+            timeout_s=args.timeout,
+            verify=verify,
+            payload=req1,
+        )
         _print_http_summary("Response #1 (non-stream)", r1)
         _print_response_json("Response #1 JSON", data1)
         if r1.status_code >= 400:
@@ -448,7 +496,13 @@ def _main(argv: list[str]) -> int:
     if args.print_requests:
         _print_response_json("Request #2 (send *_call_output; continue)", req2)
 
-    r2, data2 = _responses_create(base_url=base_url, headers=headers, timeout_s=args.timeout, payload=req2)
+    r2, data2 = _responses_create(
+        base_url=base_url,
+        headers=headers,
+        timeout_s=args.timeout,
+        verify=verify,
+        payload=req2,
+    )
     _print_http_summary("Response #2 (non-stream)", r2)
     _print_response_json("Response #2 JSON", data2)
     if r2.status_code >= 400:
@@ -472,7 +526,11 @@ def _main(argv: list[str]) -> int:
                 stream=False,
             )
             r2b, data2b = _responses_create(
-                base_url=base_url, headers=headers, timeout_s=args.timeout, payload=req2b
+                base_url=base_url,
+                headers=headers,
+                timeout_s=args.timeout,
+                verify=verify,
+                payload=req2b,
             )
             _print_http_summary("Response #2 (stateless retry)", r2b)
             _print_response_json("Response #2 (stateless retry) JSON", data2b)

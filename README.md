@@ -39,6 +39,18 @@ The server will start at `http://127.0.0.1:8000`.
 curl -sS http://127.0.0.1:8000/healthz
 ```
 
+## HTTPS / TLS
+
+OpenBridge serves **HTTP** by default. If a client tries to connect via `https://127.0.0.1:8000`, Uvicorn will log `Invalid HTTP request received.` and the client will disconnect.
+
+Options:
+
+- Use an **HTTP** base URL (recommended for local dev): `http://127.0.0.1:8000`
+- Run OpenBridge with **TLS** by setting:
+  - `OPENBRIDGE_SSL_CERTFILE`
+  - `OPENBRIDGE_SSL_KEYFILE`
+  - `OPENBRIDGE_SSL_KEYFILE_PASSWORD` (optional)
+
 ## Configuration
 
 Configuration is managed via environment variables.
@@ -54,6 +66,9 @@ Configuration is managed via environment variables.
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Upstream API URL. |
 | `OPENBRIDGE_HOST` | `127.0.0.1` | Host to bind the server to. |
 | `OPENBRIDGE_PORT` | `8000` | Port to bind the server to. |
+| `OPENBRIDGE_SSL_CERTFILE` | - | TLS certificate file path (enables HTTPS). |
+| `OPENBRIDGE_SSL_KEYFILE` | - | TLS private key file path (enables HTTPS). |
+| `OPENBRIDGE_SSL_KEYFILE_PASSWORD` | - | Optional private key password. |
 | `OPENBRIDGE_STATE_BACKEND` | `memory` | State backend: `memory`, `redis`, or `disabled`. |
 | `OPENBRIDGE_REDIS_URL` | - | Redis URL (required if backend is `redis`). |
 | `OPENBRIDGE_MODEL_MAP_PATH` | - | Path to a JSON file for mapping model aliases. |
