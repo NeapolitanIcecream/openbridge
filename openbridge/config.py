@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -84,5 +84,9 @@ _settings: Settings | None = None
 def load_settings() -> Settings:
     global _settings
     if _settings is None:
-        _settings = Settings()
+        # Settings is loaded from environment variables via pydantic-settings.
+        # Use Any to avoid static type checkers requiring init params.
+        settings_cls: Any = Settings
+        _settings = settings_cls()
+    assert _settings is not None
     return _settings

@@ -19,9 +19,14 @@ class MemoryStateStore(StateStore):
             return None
         return record
 
-    async def set(self, response_id: str, record: StoredResponse, ttl_seconds: int) -> None:
+    async def set(
+        self, response_id: str, record: StoredResponse, ttl_seconds: int
+    ) -> None:
         expires_at = time.time() + ttl_seconds if ttl_seconds > 0 else 0.0
         self._entries[response_id] = (expires_at, record)
 
     async def delete(self, response_id: str) -> None:
         self._entries.pop(response_id, None)
+
+    async def close(self) -> None:
+        return None

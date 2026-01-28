@@ -49,7 +49,7 @@ class ResponseTextConfig(BaseModel):
 
 class InputItem(BaseModel):
     type: str | None = None
-    role: str | None = None
+    role: Literal["system", "developer", "user", "assistant", "tool"] | None = None
     content: Any | None = None
     call_id: str | None = None
     name: str | None = None

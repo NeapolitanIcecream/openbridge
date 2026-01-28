@@ -74,9 +74,7 @@ def translate_request(
             ChatMessage(role="system", content=request.instructions),
         )
 
-    input_messages = input_items_to_messages(
-        request.input, tool_registry=tool_registry
-    )
+    input_messages = input_items_to_messages(request.input, tool_registry=tool_registry)
     messages.extend(input_messages)
 
     tools, tool_choice = normalize_tools_and_choice(
@@ -177,8 +175,12 @@ def input_items_to_messages(
 
     messages: list[ChatMessage] = []
     for raw_item in input_value:
-        item = raw_item if isinstance(raw_item, InputItem) else InputItem.model_validate(raw_item)
-        if item.role and item.content is not None:
+        item = (
+            raw_item
+            if isinstance(raw_item, InputItem)
+            else InputItem.model_validate(raw_item)
+        )
+        if item.role is not None and item.content is not None:
             content = item.content
             if not isinstance(content, (str, list, dict)):
                 content = json_dumps(content)

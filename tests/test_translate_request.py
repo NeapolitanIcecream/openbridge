@@ -22,8 +22,12 @@ def test_input_items_to_messages_tool_calls():
 
     assert messages[0].role == "user"
     assert messages[1].role == "assistant"
-    assert messages[1].tool_calls[0].id == "call_1"
-    assert messages[1].tool_calls[0].function.name == "get_weather"
+    tool_calls = messages[1].tool_calls
+    assert tool_calls is not None
+    assert tool_calls[0].id == "call_1"
+    assert tool_calls[0].function.name == "get_weather"
     assert messages[2].role == "tool"
     assert messages[2].tool_call_id == "call_1"
-    assert json.loads(messages[2].content)["temp"] == 25
+    tool_content = messages[2].content
+    assert isinstance(tool_content, str)
+    assert json.loads(tool_content)["temp"] == 25

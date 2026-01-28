@@ -11,7 +11,11 @@ from openbridge.models.chat import ChatCompletionResponse
 from openbridge.models.errors import ErrorDetail, ErrorResponse
 from openbridge.models.responses import ResponsesCreateRequest
 from openbridge.state import StoredResponse
-from openbridge.services import apply_degrade_fields, call_with_retry, extract_error_message
+from openbridge.services import (
+    apply_degrade_fields,
+    call_with_retry,
+    extract_error_message,
+)
 from openbridge.translate import chat_response_to_responses, translate_request
 from openbridge.utils import new_id, now_ts
 
@@ -75,7 +79,9 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
             raise HTTPException(status_code=501, detail="State store is disabled")
         stored = await state_store.get(payload.previous_response_id)
         if stored is None:
-            raise HTTPException(status_code=404, detail="previous_response_id not found")
+            raise HTTPException(
+                status_code=404, detail="previous_response_id not found"
+            )
         history_messages = stored.messages
 
     try:

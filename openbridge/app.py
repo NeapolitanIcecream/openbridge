@@ -59,8 +59,9 @@ def create_app() -> FastAPI:
             app.state.state_store = None
         yield
         await app.state.openrouter_client.close()
-        if hasattr(app.state.state_store, "close"):
-            await app.state.state_store.close()
+        state_store = app.state.state_store
+        if state_store is not None:
+            await state_store.close()
 
     app = FastAPI(title="OpenBridge", lifespan=lifespan)
 
@@ -73,7 +74,9 @@ def create_app() -> FastAPI:
         )
 
     @app.exception_handler(RequestValidationError)
-    async def _validation_exception_handler(request: Request, exc: RequestValidationError):
+    async def _validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ):
         message = f"Invalid request: {exc.errors()}"
         return JSONResponse(
             status_code=422,

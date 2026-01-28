@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from openbridge.models.chat import ChatCompletionResponse
-from openbridge.models.responses import ResponseOutputItem, ResponseOutputText, ResponsesCreateResponse
+from openbridge.models.responses import (
+    ResponseOutputItem,
+    ResponseOutputText,
+    ResponsesCreateResponse,
+)
 from openbridge.tools.registry import ToolVirtualizationResult
 from openbridge.utils import new_id, now_ts
 

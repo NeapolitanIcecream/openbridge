@@ -2,13 +2,29 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import (
+    Any,
+    AsyncContextManager,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Protocol,
+)
 
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
-from openbridge.clients.openrouter import OpenRouterClient
 from openbridge.config import Settings
-from openbridge.models.chat import ChatCompletionRequest, ChatMessage, ChatToolCall, ChatToolCallFunction
+from openbridge.models.chat import (
+    ChatCompletionRequest,
+    ChatMessage,
+    ChatToolCall,
+    ChatToolCallFunction,
+)
 from openbridge.models.events import (
     ResponseCompletedEvent,
     ResponseCreatedEvent,
@@ -20,10 +36,20 @@ from openbridge.models.events import (
     ResponseOutputTextDeltaEvent,
     ResponseOutputTextDoneEvent,
 )
-from openbridge.models.responses import ResponseOutputItem, ResponseOutputText, ResponsesCreateResponse
+from openbridge.models.responses import (
+    ResponseOutputItem,
+    ResponseOutputText,
+    ResponsesCreateResponse,
+)
 from openbridge.services import apply_degrade_fields, extract_error_message
 from openbridge.tools.registry import ToolVirtualizationResult
 from openbridge.utils import json_dumps, new_id
+
+
+class ChatCompletionsSSEClient(Protocol):
+    def connect_chat_completions_sse(
+        self, payload: dict[str, Any]
+    ) -> AsyncContextManager[Any]: ...
 
 
 @dataclass
@@ -57,7 +83,11 @@ class ResponsesStreamTranslator:
 
     def start_events(self) -> list[dict[str, Any]]:
         response = self._build_response()
-        return [_event("response.created", ResponseCreatedEvent(response=response).model_dump())]
+        return [
+            _event(
+                "response.created", ResponseCreatedEvent(response=response).model_dump()
+            )
+        ]
 
     def process_chunk(self, chunk: dict[str, Any]) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
@@ -93,22 +123,28 @@ class ResponsesStreamTranslator:
                 )
             )
 
-        tool_states = [state for state in self._tool_calls.values() if state.output_index is not None]
-        for state in sorted(tool_states, key=lambda entry: int(entry.output_index)):  # type: ignore[arg-type]
+        tool_states = [
+            (state.output_index, state)
+            for state in self._tool_calls.values()
+            if state.output_index is not None
+        ]
+        for output_index, state in sorted(tool_states, key=lambda entry: entry[0]):
             events.append(
                 _event(
                     "response.function_call_arguments.done",
                     ResponseFunctionCallArgumentsDoneEvent(
-                        output_index=int(state.output_index), arguments=state.arguments
+                        output_index=output_index,
+                        arguments=state.arguments,
                     ).model_dump(),
                 )
             )
-            item = self._output_items[int(state.output_index)]
+            item = self._output_items[output_index]
             events.append(
                 _event(
                     "response.output_item.done",
                     ResponseOutputItemDoneEvent(
-                        output_index=int(state.output_index), item=item
+                        output_index=output_index,
+                        item=item,
                     ).model_dump(),
                 )
             )
@@ -131,8 +167,12 @@ class ResponsesStreamTranslator:
 
     def assistant_message(self) -> ChatMessage | None:
         tool_calls: list[ChatToolCall] = []
-        tool_states = [state for state in self._tool_calls.values() if state.output_index is not None]
-        for state in sorted(tool_states, key=lambda entry: int(entry.output_index)):  # type: ignore[arg-type]
+        tool_states = [
+            (state.output_index, state)
+            for state in self._tool_calls.values()
+            if state.output_index is not None
+        ]
+        for _, state in sorted(tool_states, key=lambda entry: entry[0]):
             if not state.call_id or not state.name:
                 continue
             tool_calls.append(
@@ -192,7 +232,9 @@ class ResponsesStreamTranslator:
         )
         return events
 
-    def _handle_tool_call_deltas(self, tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _handle_tool_call_deltas(
+        self, tool_calls: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
         for tool_call in tool_calls:
             index = tool_call.get("index", 0)
@@ -233,7 +275,9 @@ class ResponsesStreamTranslator:
             events.extend(self._maybe_emit_tool_call_item_added(state))
         return events
 
-    def _maybe_emit_tool_call_item_added(self, state: ToolCallState) -> list[dict[str, Any]]:
+    def _maybe_emit_tool_call_item_added(
+        self, state: ToolCallState
+    ) -> list[dict[str, Any]]:
         if state.output_index is not None:
             return []
         if not state.call_id or not state.name:
@@ -256,7 +300,9 @@ class ResponsesStreamTranslator:
         events: list[dict[str, Any]] = [
             _event(
                 "response.output_item.added",
-                ResponseOutputItemAddedEvent(output_index=output_index, item=item).model_dump(),
+                ResponseOutputItemAddedEvent(
+                    output_index=output_index, item=item
+                ).model_dump(),
             )
         ]
 
@@ -287,13 +333,15 @@ class ResponsesStreamTranslator:
 
 async def stream_responses_events(
     *,
-    client: OpenRouterClient,
+    client: ChatCompletionsSSEClient,
     chat_request: ChatCompletionRequest,
     tool_map: ToolVirtualizationResult,
     response_id: str,
     created_at: int,
     settings: Settings,
-    on_complete: Callable[[ResponsesCreateResponse, ChatMessage | None], Awaitable[None]]
+    on_complete: Callable[
+        [ResponsesCreateResponse, ChatMessage | None], Awaitable[None]
+    ]
     | None,
 ) -> AsyncIterator[dict[str, Any]]:
     payload: dict[str, Any] = chat_request.model_dump(exclude_none=True)
@@ -324,7 +372,9 @@ async def stream_responses_events(
         async for attempt in retrying:
             with attempt:
                 try:
-                    async with client.connect_chat_completions_sse(payload) as event_source:
+                    async with client.connect_chat_completions_sse(
+                        payload
+                    ) as event_source:
                         response = event_source.response
                         if response.status_code in retryable_status:
                             await response.aread()
@@ -336,7 +386,9 @@ async def stream_responses_events(
                             await response.aread()
                             error_message = extract_error_message(response)
                             degraded_payload = apply_degrade_fields(
-                                payload, settings.openbridge_degrade_fields, error_message
+                                payload,
+                                settings.openbridge_degrade_fields,
+                                error_message,
                             )
                             if degraded_payload:
                                 payload = degraded_payload
@@ -353,14 +405,16 @@ async def stream_responses_events(
                             )
                             return
 
-                        content_type = (
-                            response.headers.get("content-type", "").partition(";")[0]
-                        )
+                        content_type = response.headers.get(
+                            "content-type", ""
+                        ).partition(";")[0]
                         if "text/event-stream" not in content_type:
                             await response.aread()
                             error_message = extract_error_message(response)
                             degraded_payload = apply_degrade_fields(
-                                payload, settings.openbridge_degrade_fields, error_message
+                                payload,
+                                settings.openbridge_degrade_fields,
+                                error_message,
                             )
                             if degraded_payload:
                                 payload = degraded_payload
@@ -398,7 +452,9 @@ async def stream_responses_events(
         for event in translator.finish_events():
             yield event
         if on_complete is not None:
-            await on_complete(translator.final_response(), translator.assistant_message())
+            await on_complete(
+                translator.final_response(), translator.assistant_message()
+            )
     except Exception as exc:  # noqa: BLE001
         error = {"message": str(exc), "type": "upstream_error"}
         if not started:

@@ -15,7 +15,9 @@ class RedisStateStore(StateStore):
             return None
         return StoredResponse.model_validate_json(raw)
 
-    async def set(self, response_id: str, record: StoredResponse, ttl_seconds: int) -> None:
+    async def set(
+        self, response_id: str, record: StoredResponse, ttl_seconds: int
+    ) -> None:
         if ttl_seconds > 0:
             await self._client.setex(response_id, ttl_seconds, record.model_dump_json())
         else:

@@ -1,5 +1,6 @@
 import json
 from contextlib import asynccontextmanager
+from typing import Any
 
 import pytest
 
@@ -11,7 +12,9 @@ from openbridge.tools.registry import ToolVirtualizationResult
 
 
 def test_streaming_text_events():
-    tool_map = ToolVirtualizationResult(chat_tools=[], function_name_map={}, external_name_map={})
+    tool_map = ToolVirtualizationResult(
+        chat_tools=[], function_name_map={}, external_name_map={}
+    )
     translator = ResponsesStreamTranslator(
         response_id="resp_1",
         model="openai/gpt-4.1",
@@ -25,7 +28,9 @@ def test_streaming_text_events():
     events += translator.process_chunk({"choices": [{"delta": {"content": "world"}}]})
     events += translator.finish_events()
 
-    done_events = [event for event in events if event["event"] == "response.output_text.done"]
+    done_events = [
+        event for event in events if event["event"] == "response.output_text.done"
+    ]
     assert done_events
     data = json.loads(done_events[0]["data"])
     assert data["text"] == "Hello world"
@@ -58,7 +63,7 @@ def test_streaming_tool_call_events():
                                 "type": "function",
                                 "function": {
                                     "name": "ob_apply_patch",
-                                    "arguments": "{\"patch\":\"x\"}",
+                                    "arguments": '{"patch":"x"}',
                                 },
                             }
                         ]
@@ -70,11 +75,13 @@ def test_streaming_tool_call_events():
     events += translator.finish_events()
 
     delta_events = [
-        event for event in events if event["event"] == "response.function_call_arguments.delta"
+        event
+        for event in events
+        if event["event"] == "response.function_call_arguments.delta"
     ]
     assert delta_events
     delta_payload = json.loads(delta_events[0]["data"])
-    assert delta_payload["delta"] == "{\"patch\":\"x\"}"
+    assert delta_payload["delta"] == '{"patch":"x"}'
 
 
 def test_streaming_tool_call_id_late():
@@ -105,7 +112,7 @@ def test_streaming_tool_call_id_late():
                                 "type": "function",
                                 "function": {
                                     "name": "ob_apply_patch",
-                                    "arguments": "{\"patch\":\"x\"}",
+                                    "arguments": '{"patch":"x"}',
                                 },
                             }
                         ]
@@ -136,17 +143,21 @@ def test_streaming_tool_call_id_late():
         }
     )
 
-    added_events = [event for event in events if event["event"] == "response.output_item.added"]
+    added_events = [
+        event for event in events if event["event"] == "response.output_item.added"
+    ]
     assert added_events
     added_payload = json.loads(added_events[0]["data"])
     assert added_payload["item"]["call_id"] == "call_1"
 
     delta_events = [
-        event for event in events if event["event"] == "response.function_call_arguments.delta"
+        event
+        for event in events
+        if event["event"] == "response.function_call_arguments.delta"
     ]
     assert delta_events
     delta_payload = json.loads(delta_events[0]["data"])
-    assert delta_payload["delta"] == "{\"patch\":\"x\"}"
+    assert delta_payload["delta"] == '{"patch":"x"}'
 
 
 @pytest.mark.asyncio
@@ -157,13 +168,16 @@ async def test_stream_responses_events_early_failure_emits_failed():
             raise RuntimeError("boom")
             yield  # pragma: no cover
 
-    settings = Settings(
+    settings_cls: Any = Settings
+    settings = settings_cls(
         OPENROUTER_API_KEY="test",
         OPENBRIDGE_RETRY_MAX_ATTEMPTS=1,
         OPENBRIDGE_RETRY_BACKOFF=0.0,
         OPENBRIDGE_RETRY_MAX_SECONDS=0.0,
     )
-    tool_map = ToolVirtualizationResult(chat_tools=[], function_name_map={}, external_name_map={})
+    tool_map = ToolVirtualizationResult(
+        chat_tools=[], function_name_map={}, external_name_map={}
+    )
     chat_request = ChatCompletionRequest(
         model="openai/gpt-4.1",
         messages=[ChatMessage(role="user", content="hi")],

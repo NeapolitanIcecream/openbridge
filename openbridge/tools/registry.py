@@ -25,7 +25,9 @@ class ToolRegistry:
     def default_registry(cls) -> "ToolRegistry":
         return cls()
 
-    def register_builtin(self, external_type: str, tool_def: ChatToolDefinition) -> None:
+    def register_builtin(
+        self, external_type: str, tool_def: ChatToolDefinition
+    ) -> None:
         self._builtins[external_type] = tool_def
 
     def function_name_for_external(self, external_type: str) -> str:
@@ -110,7 +112,9 @@ class ToolRegistry:
                 function_name_map[name] = external_type
                 external_name_map[external_type] = name
 
-        return ToolVirtualizationResult(chat_tools, function_name_map, external_name_map)
+        return ToolVirtualizationResult(
+            chat_tools, function_name_map, external_name_map
+        )
 
     def tool_call_args_from_item(self, external_type: str, item: InputItem) -> str:
         data = item.model_dump(exclude_none=True, mode="python")

@@ -133,7 +133,10 @@ def _default_parameters_schema(tool_name: str) -> dict[str, Any]:
             "type": "object",
             "properties": {
                 "code": {"type": "string"},
-                "language": {"type": "string", "enum": ["python", "bash", "javascript"]},
+                "language": {
+                    "type": "string",
+                    "enum": ["python", "bash", "javascript"],
+                },
             },
             "required": ["code"],
             "additionalProperties": False,
@@ -264,7 +267,9 @@ def _extract_tool_calls_from_non_stream(resp_json: dict[str, Any]) -> Any:
         return None
 
 
-def _best_effort_reconstruct_stream_tool_calls(events: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+def _best_effort_reconstruct_stream_tool_calls(
+    events: list[dict[str, Any]],
+) -> dict[int, dict[str, Any]]:
     """
     Reconstruct tool_calls by concatenating streamed `function.arguments` deltas.
     Returns a mapping: tool_call_index -> {id,type,function:{name,arguments}}.
@@ -302,7 +307,9 @@ def _print_header(title: str) -> None:
     print(f"\n=== {title} ===")
 
 
-def _post_non_stream(client: httpx.Client, headers: dict[str, str], payload: dict[str, Any]) -> None:
+def _post_non_stream(
+    client: httpx.Client, headers: dict[str, str], payload: dict[str, Any]
+) -> None:
     r = client.post(OPENROUTER_CHAT_COMPLETIONS_URL, headers=headers, json=payload)
     _print_header("HTTP")
     print(f"status: {r.status_code}")
@@ -332,10 +339,14 @@ def _post_non_stream(client: httpx.Client, headers: dict[str, str], payload: dic
             print(f"Could not json.loads(arguments): {e!r}")
 
 
-def _post_stream(client: httpx.Client, headers: dict[str, str], payload: dict[str, Any]) -> None:
+def _post_stream(
+    client: httpx.Client, headers: dict[str, str], payload: dict[str, Any]
+) -> None:
     events: list[dict[str, Any]] = []
 
-    with client.stream("POST", OPENROUTER_CHAT_COMPLETIONS_URL, headers=headers, json=payload) as r:
+    with client.stream(
+        "POST", OPENROUTER_CHAT_COMPLETIONS_URL, headers=headers, json=payload
+    ) as r:
         _print_header("HTTP")
         print(f"status: {r.status_code}")
         print(f"content-type: {r.headers.get('content-type')}")
@@ -453,7 +464,9 @@ def main() -> None:
         try:
             parameters_schema = json.loads(args.schema_json)
         except json.JSONDecodeError as e:
-            raise SystemExit(f"Invalid --schema-json (expected JSON object): {e}") from e
+            raise SystemExit(
+                f"Invalid --schema-json (expected JSON object): {e}"
+            ) from e
 
     args_obj = _default_args(tool_name, patch_text=patch_text)
     if args.args_json:

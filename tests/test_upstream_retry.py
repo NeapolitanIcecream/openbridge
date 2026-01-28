@@ -1,6 +1,7 @@
 import httpx
 import pytest
 import respx
+from typing import Any
 
 from openbridge.clients.openrouter import OpenRouterClient
 from openbridge.config import Settings
@@ -10,7 +11,8 @@ from openbridge.services.upstream import call_with_retry
 @pytest.mark.asyncio
 @respx.mock
 async def test_call_with_retry_success():
-    settings = Settings(OPENROUTER_API_KEY="test")
+    settings_cls: Any = Settings
+    settings = settings_cls(OPENROUTER_API_KEY="test")
     client = OpenRouterClient(settings)
 
     url = f"{settings.openrouter_base_url.rstrip('/')}/chat/completions"
