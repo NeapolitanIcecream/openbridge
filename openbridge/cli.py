@@ -3,11 +3,15 @@ from __future__ import annotations
 from typing import Annotated
 
 import typer
-import uvicorn
+from pydantic import ValidationError
+from rich.console import Console
 
 from openbridge import __version__
-from openbridge.config import load_settings
+from openbridge.config import Settings, load_settings
 from openbridge.logging import get_logger, setup_logging
+
+
+_error_console = Console(stderr=True)
 
 
 def _version_callback(value: bool) -> None:
@@ -30,7 +34,15 @@ def _run_server(
     port: int | None,
     reload: bool,
 ) -> None:
-    settings = load_settings()
+    try:
+        settings = load_settings()
+    except ValidationError as exc:
+        _print_settings_validation_error(exc)
+        raise typer.Exit(code=1) from exc
+    except ValueError as exc:
+        _error_console.print(f"[bold red]Configuration error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+
     host = host or settings.openbridge_host
     port = port or settings.openbridge_port
 
@@ -38,6 +50,8 @@ def _run_server(
     logger = get_logger()
     scheme = "https" if settings.openbridge_ssl_certfile else "http"
     logger.info("Starting OpenBridge on {}://{}:{}", scheme, host, port)
+
+    import uvicorn
 
     uvicorn.run(
         "openbridge.app:app",
@@ -52,6 +66,29 @@ def _run_server(
         if settings.openbridge_ssl_keyfile
         else None,
         ssl_keyfile_password=settings.openbridge_ssl_keyfile_password,
+    )
+
+
+def _print_settings_validation_error(exc: ValidationError) -> None:
+    details: list[str] = []
+    for err in exc.errors():
+        loc = err.get("loc") or ()
+        field = loc[-1] if loc else "settings"
+
+        if isinstance(field, str) and field in Settings.model_fields:
+            alias = Settings.model_fields[field].alias or field
+        else:
+            alias = str(field)
+
+        msg = err.get("msg") or "Invalid value"
+        details.append(f"{alias}: {msg}")
+
+    _error_console.print("[bold red]OpenBridge configuration error[/bold red]")
+    for line in details:
+        _error_console.print(f"[red]- {line}[/red]")
+    _error_console.print(
+        "[dim]Fix your environment variables or .env file and retry. "
+        "Required: OPENROUTER_API_KEY.[/dim]"
     )
 
 

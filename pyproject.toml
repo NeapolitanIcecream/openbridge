@@ -21,6 +21,10 @@ dependencies = [
     "uvicorn[standard]>=0.40.0",
 ]
 
+[build-system]
+requires = ["uv_build>=0.9.2,<0.10.0"]
+build-backend = "uv_build"
+
 [project.scripts]
 openbridge = "openbridge.cli:app"
 
@@ -49,6 +53,10 @@ ui = [
 
 [tool.uv]
 package = true
+
+[tool.uv.build-backend]
+module-name = "openbridge"
+module-root = ""
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

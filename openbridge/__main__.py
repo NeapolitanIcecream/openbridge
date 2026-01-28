@@ -4,7 +4,7 @@ from openbridge.cli import app
 
 
 def main() -> None:
-    app()
+    app(prog_name="openbridge")
 
 
 if __name__ == "__main__":

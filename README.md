@@ -39,9 +39,10 @@ Show CLI help:
 uv run openbridge --help
 ```
 
-After installation, run it directly:
+Optionally install it as a global CLI tool:
 
 ```bash
+uv tool install .
 openbridge --help
 openbridge
 ```

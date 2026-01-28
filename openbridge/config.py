@@ -109,3 +109,13 @@ def load_settings() -> Settings:
         _settings = settings_cls()
     assert _settings is not None
     return _settings
+
+
+def reset_settings_cache() -> None:
+    """Reset the cached Settings instance.
+
+    This is mainly useful for tests and CLI invocations that intentionally vary
+    environment variables between runs.
+    """
+    global _settings
+    _settings = None
