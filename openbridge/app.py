@@ -14,6 +14,7 @@ from openbridge.logging import get_logger, setup_logging
 from openbridge.metrics import RequestTimer
 from openbridge.models.errors import ErrorDetail, ErrorResponse
 from openbridge.state import MemoryStateStore, RedisStateStore
+from openbridge.trace import MemoryTraceStore, RedisTraceStore
 from openbridge.tools import ToolRegistry
 from openbridge.utils import new_id
 
@@ -47,7 +48,10 @@ def _openai_error_json(status_code: int, message: str) -> dict:
 
 def create_app() -> FastAPI:
     settings = load_settings()
-    setup_logging(settings.openbridge_log_level)
+    setup_logging(
+        settings.openbridge_log_level,
+        log_file=str(settings.openbridge_log_file) if settings.openbridge_log_file else None,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -60,11 +64,24 @@ def create_app() -> FastAPI:
             app.state.state_store = MemoryStateStore()
         else:
             app.state.state_store = None
+
+        if settings.openbridge_trace_backend == "redis":
+            redis_url = settings.openbridge_trace_redis_url or settings.openbridge_redis_url
+            app.state.trace_store = RedisTraceStore(redis_url)
+        elif settings.openbridge_trace_backend == "memory":
+            app.state.trace_store = MemoryTraceStore(
+                max_entries=settings.openbridge_trace_max_entries
+            )
+        else:
+            app.state.trace_store = None
         yield
         await app.state.openrouter_client.close()
         state_store = app.state.state_store
         if state_store is not None:
             await state_store.close()
+        trace_store = getattr(app.state, "trace_store", None)
+        if trace_store is not None:
+            await trace_store.close()
 
     app = FastAPI(title="OpenBridge", lifespan=lifespan)
 

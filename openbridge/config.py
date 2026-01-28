@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     openbridge_host: str = Field("127.0.0.1", alias="OPENBRIDGE_HOST")
     openbridge_port: int = Field(8000, alias="OPENBRIDGE_PORT")
     openbridge_log_level: str = Field("INFO", alias="OPENBRIDGE_LOG_LEVEL")
+    openbridge_log_file: Path | None = Field(None, alias="OPENBRIDGE_LOG_FILE")
     openbridge_ssl_certfile: Path | None = Field(None, alias="OPENBRIDGE_SSL_CERTFILE")
     openbridge_ssl_keyfile: Path | None = Field(None, alias="OPENBRIDGE_SSL_KEYFILE")
     openbridge_ssl_keyfile_password: str | None = Field(
@@ -77,6 +78,44 @@ class Settings(BaseSettings):
         alias="OPENBRIDGE_MAX_TOKENS_BUFFER",
     )
 
+    # Debug / tracing (DFX)
+    openbridge_debug_endpoints: bool = Field(
+        False,
+        alias="OPENBRIDGE_DEBUG_ENDPOINTS",
+    )
+    openbridge_trace_backend: Literal["memory", "redis", "disabled"] = Field(
+        "memory",
+        alias="OPENBRIDGE_TRACE_BACKEND",
+    )
+    openbridge_trace_enabled: bool = Field(
+        False,
+        alias="OPENBRIDGE_TRACE_ENABLED",
+    )
+    openbridge_trace_log: bool = Field(
+        False,
+        alias="OPENBRIDGE_TRACE_LOG",
+    )
+    openbridge_trace_ttl_seconds: int = Field(
+        3600,
+        alias="OPENBRIDGE_TRACE_TTL_SECONDS",
+    )
+    openbridge_trace_max_entries: int = Field(
+        200,
+        alias="OPENBRIDGE_TRACE_MAX_ENTRIES",
+    )
+    openbridge_trace_content: Literal["none", "truncate", "full"] = Field(
+        "truncate",
+        alias="OPENBRIDGE_TRACE_CONTENT",
+    )
+    openbridge_trace_max_chars: int = Field(
+        4000,
+        alias="OPENBRIDGE_TRACE_MAX_CHARS",
+    )
+    openbridge_trace_redis_url: str | None = Field(
+        None,
+        alias="OPENBRIDGE_TRACE_REDIS_URL",
+    )
+
     @field_validator("openbridge_degrade_fields", mode="before")
     @classmethod
     def _split_degrade_fields(cls, value: str | list[str]) -> list[str]:
@@ -98,6 +137,29 @@ class Settings(BaseSettings):
             raise ValueError(f"OPENBRIDGE_SSL_CERTFILE not found: {cert}")
         if key is not None and not key.exists():
             raise ValueError(f"OPENBRIDGE_SSL_KEYFILE not found: {key}")
+
+        if self.openbridge_log_file is not None:
+            parent = self.openbridge_log_file.expanduser().resolve().parent
+            if not parent.exists():
+                raise ValueError(
+                    f"OPENBRIDGE_LOG_FILE parent directory not found: {parent}"
+                )
+
+        if self.openbridge_trace_ttl_seconds < 0:
+            raise ValueError("OPENBRIDGE_TRACE_TTL_SECONDS must be >= 0")
+        if self.openbridge_trace_max_entries <= 0:
+            raise ValueError("OPENBRIDGE_TRACE_MAX_ENTRIES must be > 0")
+        if self.openbridge_trace_max_chars < 0:
+            raise ValueError("OPENBRIDGE_TRACE_MAX_CHARS must be >= 0")
+        if (
+            self.openbridge_trace_backend == "redis"
+            and not (self.openbridge_trace_redis_url or self.openbridge_redis_url)
+        ):
+            raise ValueError(
+                "OPENBRIDGE_TRACE_REDIS_URL must be set when OPENBRIDGE_TRACE_BACKEND=redis"
+            )
+        if self.openbridge_trace_redis_url is None:
+            self.openbridge_trace_redis_url = self.openbridge_redis_url
         return self
 
 

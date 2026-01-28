@@ -440,6 +440,7 @@ async def stream_responses_events(
     response_id: str,
     created_at: int,
     settings: Settings,
+    on_upstream_request_id: Callable[[str | None], Awaitable[None]] | None = None,
     on_complete: Callable[
         [ResponsesCreateResponse, ChatMessage | None], Awaitable[None]
     ]
@@ -477,6 +478,10 @@ async def stream_responses_events(
                         payload
                     ) as event_source:
                         response = event_source.response
+                        if on_upstream_request_id is not None:
+                            await on_upstream_request_id(
+                                response.headers.get("x-request-id")
+                            )
                         if response.status_code in retryable_status:
                             await response.aread()
                             raise StreamRetryableError(
