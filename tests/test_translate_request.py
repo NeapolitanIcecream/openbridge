@@ -1,8 +1,10 @@
 import json
 
 from openbridge.models.responses import InputItem
+from openbridge.models.responses import ResponsesCreateRequest
 from openbridge.tools.registry import ToolRegistry
 from openbridge.translate.request import input_items_to_messages
+from openbridge.translate.request import translate_request
 
 
 def test_input_items_to_messages_tool_calls():
@@ -31,3 +33,23 @@ def test_input_items_to_messages_tool_calls():
     tool_content = messages[2].content
     assert isinstance(tool_content, str)
     assert json.loads(tool_content)["temp"] == 25
+
+
+def test_translate_request_adds_max_tokens_buffer():
+    registry = ToolRegistry.default_registry()
+    req = ResponsesCreateRequest.model_validate(
+        {
+            "model": "gpt-5.2-codex",
+            "instructions": "Reply with exactly 'OK' and nothing else.",
+            "input": "ping",
+            "max_output_tokens": 16,
+            "stream": False,
+            "store": True,
+        }
+    )
+    from openbridge.config import Settings
+
+    settings = Settings(OPENROUTER_API_KEY="test", OPENBRIDGE_MAX_TOKENS_BUFFER="64")
+    tr = translate_request(settings, req, registry, history_messages=[])
+    assert tr.chat_request.max_tokens == 80
+

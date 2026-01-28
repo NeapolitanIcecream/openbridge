@@ -39,7 +39,10 @@ def _openai_error_json(status_code: int, message: str) -> dict:
             code=None,
         )
     )
-    return error.model_dump()
+    data = error.model_dump()
+    # Compatibility: some clients (and probe scripts) expect a top-level `detail` field.
+    data["detail"] = message
+    return data
 
 
 def create_app() -> FastAPI:

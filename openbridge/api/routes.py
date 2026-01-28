@@ -126,21 +126,29 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
         )
         return EventSourceResponse(event_stream)
 
-    upstream_payload = chat_request.model_dump(exclude_none=True)
-    upstream_response = await call_with_retry(
-        client=openrouter_client, payload=upstream_payload, settings=settings
-    )
-    if upstream_response.status_code >= 400:
-        error_message = extract_error_message(upstream_response)
-        degraded_payload = apply_degrade_fields(
-            upstream_payload, settings.openbridge_degrade_fields, error_message
+    async def _call_upstream(payload_dict: dict) -> object:
+        upstream_response = await call_with_retry(
+            client=openrouter_client,
+            payload=payload_dict,
+            settings=settings,
         )
-        if degraded_payload:
-            upstream_response = await call_with_retry(
-                client=openrouter_client, payload=degraded_payload, settings=settings
-            )
         if upstream_response.status_code >= 400:
-            return _upstream_error_response(upstream_response)
+            error_message = extract_error_message(upstream_response)
+            degraded_payload = apply_degrade_fields(
+                payload_dict, settings.openbridge_degrade_fields, error_message
+            )
+            if degraded_payload:
+                upstream_response = await call_with_retry(
+                    client=openrouter_client,
+                    payload=degraded_payload,
+                    settings=settings,
+                )
+        return upstream_response
+
+    upstream_payload = chat_request.model_dump(exclude_none=True)
+    upstream_response = await _call_upstream(upstream_payload)
+    if upstream_response.status_code >= 400:
+        return _upstream_error_response(upstream_response)
 
     upstream_request_id = upstream_response.headers.get("x-request-id")
     if upstream_request_id:
@@ -148,14 +156,42 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
             "OpenRouter response received"
         )
 
-    chat_response = ChatCompletionResponse.model_validate(upstream_response.json())
-    responses = chat_response_to_responses(
-        chat_response,
-        model=chat_request.model,
-        tool_map=tool_map,
-        response_id=response_id,
-        created_at=created_at,
-    )
+    def _build_responses(resp) -> tuple[ChatCompletionResponse, object]:
+        chat_response = ChatCompletionResponse.model_validate(resp.json())
+        responses = chat_response_to_responses(
+            chat_response,
+            model=chat_request.model,
+            tool_map=tool_map,
+            response_id=response_id,
+            created_at=created_at,
+        )
+        return chat_response, responses
+
+    chat_response, responses = _build_responses(upstream_response)
+    if (
+        not responses.output
+        and (payload.max_output_tokens is None or payload.max_output_tokens > 0)
+    ):
+        # Some upstreams occasionally return HTTP 200 with an empty choices/message.
+        # Retry once to improve reliability for short "ACK/OK" responses.
+        logger.warning("Upstream returned empty output; retrying once")
+        upstream_response2 = await _call_upstream(upstream_payload)
+        if upstream_response2.status_code >= 400:
+            return _upstream_error_response(upstream_response2)
+        upstream_request_id2 = upstream_response2.headers.get("x-request-id")
+        if upstream_request_id2:
+            logger.bind(upstream_request_id=upstream_request_id2).info(
+                "OpenRouter response received (retry)"
+            )
+        chat_response2, responses2 = _build_responses(upstream_response2)
+        if responses2.output:
+            upstream_response = upstream_response2
+            chat_response = chat_response2
+            responses = responses2
+        else:
+            raise HTTPException(
+                status_code=502, detail="Upstream returned empty completion"
+            )
 
     if state_store is not None and payload.store is not False:
         assistant_message = (

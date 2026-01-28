@@ -86,6 +86,7 @@ Configuration is managed via environment variables.
 | `OPENBRIDGE_STATE_BACKEND` | `memory` | State backend: `memory`, `redis`, or `disabled`. |
 | `OPENBRIDGE_REDIS_URL` | - | Redis URL (required if backend is `redis`). |
 | `OPENBRIDGE_MODEL_MAP_PATH` | - | Path to a JSON file for mapping model aliases. |
+| `OPENBRIDGE_MAX_TOKENS_BUFFER` | `64` | Extra upstream `max_tokens` buffer to avoid short outputs being truncated by hidden reasoning tokens. |
 
 ### Model Mapping
 

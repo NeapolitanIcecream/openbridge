@@ -16,6 +16,7 @@ from openbridge.models.responses import (
     InputItem,
     ResponsesCreateRequest,
     ResponsesTool,
+    ResponsesToolFunction,
     ToolChoiceAllowedTools,
     ToolChoiceFunction,
 )
@@ -77,8 +78,18 @@ def translate_request(
     input_messages = input_items_to_messages(request.input, tool_registry=tool_registry)
     messages.extend(input_messages)
 
+    inferred_tools = infer_tools_from_input_items(
+        request.input, tool_registry=tool_registry
+    )
+    merged_tools = merge_tools(request.tools, inferred_tools)
+    effective_tool_choice = request.tool_choice
+    if (not request.tools) and inferred_tools and effective_tool_choice is None:
+        # If the client didn't declare tools, do not allow the model to call tools,
+        # even if we inferred minimal tool definitions from input items.
+        effective_tool_choice = "none"
+
     tools, tool_choice = normalize_tools_and_choice(
-        request.tools, request.tool_choice, tool_registry
+        merged_tools, effective_tool_choice, tool_registry
     )
     response_format = build_response_format(request)
 
@@ -88,7 +99,9 @@ def translate_request(
         tools=tools.chat_tools if tools.chat_tools else None,
         tool_choice=tool_choice,
         parallel_tool_calls=request.parallel_tool_calls,
-        max_tokens=request.max_output_tokens,
+        max_tokens=_upstream_max_tokens(
+            request.max_output_tokens, buffer=int(settings.openbridge_max_tokens_buffer)
+        ),
         temperature=request.temperature,
         top_p=request.top_p,
         verbosity=request.verbosity,
@@ -241,6 +254,138 @@ def input_items_to_messages(
             continue
 
     return messages
+
+
+def infer_tools_from_input_items(
+    input_value: str | list[InputItem],
+    *,
+    tool_registry: ToolRegistry,
+) -> list[ResponsesTool]:
+    """
+    Infer minimal tool definitions from Responses input items.
+
+    This improves compatibility for follow-up requests that include tool call items
+    (e.g. function_call / *_call) but omit the tools[] field.
+    """
+    if isinstance(input_value, str):
+        return []
+
+    inferred: list[ResponsesTool] = []
+    seen: set[str] = set()
+
+    for raw_item in input_value:
+        item = (
+            raw_item
+            if isinstance(raw_item, InputItem)
+            else InputItem.model_validate(raw_item)
+        )
+        item_type = item.type or ""
+
+        if item_type == "function_call":
+            name = (item.name or "").strip()
+            if not name:
+                continue
+            # Avoid creating user-defined tools with the internal reserved prefix.
+            if name.startswith("ob_"):
+                continue
+            key = f"function:{name}"
+            if key in seen:
+                continue
+            inferred.append(
+                ResponsesTool(
+                    type="function",
+                    function=ResponsesToolFunction(
+                        name=name,
+                        description="Inferred tool definition (client did not provide schema).",
+                        parameters={
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": True,
+                        },
+                    ),
+                )
+            )
+            seen.add(key)
+            continue
+
+        # Built-in tool call items (tool virtualization).
+        if item_type.endswith("_call") and item_type != "function_call":
+            external_type = item_type[: -len("_call")]
+            if not external_type:
+                continue
+            key = f"builtin:{external_type}"
+            if key in seen:
+                continue
+            inferred.append(ResponsesTool(type=external_type))
+            seen.add(key)
+            continue
+
+        if item_type.endswith("_call_output") and item_type != "function_call_output":
+            external_type = item_type[: -len("_call_output")]
+            if not external_type:
+                continue
+            key = f"builtin:{external_type}"
+            if key in seen:
+                continue
+            inferred.append(ResponsesTool(type=external_type))
+            seen.add(key)
+            continue
+
+    return inferred
+
+
+def merge_tools(
+    tools: list[ResponsesTool] | None,
+    inferred_tools: list[ResponsesTool],
+) -> list[ResponsesTool] | None:
+    if (not tools) and (not inferred_tools):
+        return None
+
+    merged: list[ResponsesTool] = []
+    seen: set[str] = set()
+
+    def _tool_key(tool: ResponsesTool) -> str | None:
+        if tool.type == "function":
+            name = ""
+            if tool.function and tool.function.name:
+                name = str(tool.function.name)
+            elif tool.name:
+                name = str(tool.name)
+            name = name.strip()
+            if not name:
+                return None
+            return f"function:{name}"
+        return f"builtin:{tool.type}"
+
+    for tool in (tools or []) + inferred_tools:
+        key = _tool_key(tool)
+        if key is None or key in seen:
+            continue
+        seen.add(key)
+        merged.append(tool)
+
+    return merged
+
+
+def _upstream_max_tokens(
+    max_output_tokens: int | None,
+    *,
+    buffer: int,
+) -> int | None:
+    """
+    Compute upstream `max_tokens` from Responses `max_output_tokens`.
+
+    Some upstreams account for hidden reasoning tokens within `max_tokens`, which can
+    starve short visible outputs. Adding a small buffer improves reliability for
+    "ACK/OK" style responses and tool loop follow-ups.
+    """
+    if max_output_tokens is None:
+        return None
+    if max_output_tokens <= 0:
+        return max_output_tokens
+    if buffer <= 0:
+        return max_output_tokens
+    return max_output_tokens + buffer
 
 
 def _append_tool_call(messages: list[ChatMessage], tool_call: ChatToolCall) -> None:

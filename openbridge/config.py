@@ -72,6 +72,10 @@ class Settings(BaseSettings):
         3600,
         alias="OPENBRIDGE_MEMORY_TTL_SECONDS",
     )
+    openbridge_max_tokens_buffer: int = Field(
+        64,
+        alias="OPENBRIDGE_MAX_TOKENS_BUFFER",
+    )
 
     @field_validator("openbridge_degrade_fields", mode="before")
     @classmethod
