@@ -129,7 +129,7 @@ def _require_server_up(
             "Start the server in another terminal:\n"
             "  export OPENROUTER_API_KEY='...'\n"
             "  uv sync\n"
-            "  uv run python main.py\n\n"
+            "  uv run openbridge\n\n"
             f"Then retry. Root cause: {exc}"
         ) from exc
 

@@ -17,8 +17,12 @@ dependencies = [
     "rich>=14.3.1",
     "sse-starlette>=3.2.0",
     "tenacity>=9.1.2",
+    "typer-slim>=0.21.1",
     "uvicorn[standard]>=0.40.0",
 ]
+
+[project.scripts]
+openbridge = "openbridge.cli:app"
 
 [project.optional-dependencies]
 clients = [
@@ -42,6 +46,9 @@ otel = [
 ui = [
     "chainlit>=2.9.6",
 ]
+
+[tool.uv]
+package = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

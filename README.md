@@ -28,10 +28,23 @@ export OPENROUTER_API_KEY="sk-or-..."
 
 # Install dependencies and run
 uv sync
-uv run python main.py
+uv run openbridge
 ```
 
 The server will start at `http://127.0.0.1:8000`.
+
+Show CLI help:
+
+```bash
+uv run openbridge --help
+```
+
+After installation, run it directly:
+
+```bash
+openbridge --help
+openbridge
+```
 
 ### Health Check
 
