@@ -78,9 +78,12 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
             raise HTTPException(status_code=404, detail="previous_response_id not found")
         history_messages = stored.messages
 
-    translation = translate_request(
-        settings, payload, tool_registry, history_messages=history_messages
-    )
+    try:
+        translation = translate_request(
+            settings, payload, tool_registry, history_messages=history_messages
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     chat_request = translation.chat_request
     tool_map = translation.tool_map
 

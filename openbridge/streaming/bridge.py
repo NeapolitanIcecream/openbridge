@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
@@ -21,6 +21,7 @@ from openbridge.models.events import (
     ResponseOutputTextDoneEvent,
 )
 from openbridge.models.responses import ResponseOutputItem, ResponseOutputText, ResponsesCreateResponse
+from openbridge.services import apply_degrade_fields, extract_error_message
 from openbridge.tools.registry import ToolVirtualizationResult
 from openbridge.utils import json_dumps, new_id
 
@@ -28,11 +29,12 @@ from openbridge.utils import json_dumps, new_id
 @dataclass
 class ToolCallState:
     index: int
-    call_id: str
-    name: str
-    arguments: str
-    output_index: int
-    external_type: str | None
+    call_id: str | None = None
+    name: str | None = None
+    arguments: str = ""
+    output_index: int | None = None
+    external_type: str | None = None
+    pending_argument_deltas: list[str] = field(default_factory=list)
 
 
 class ResponsesStreamTranslator:
@@ -91,21 +93,22 @@ class ResponsesStreamTranslator:
                 )
             )
 
-        for state in sorted(self._tool_calls.values(), key=lambda entry: entry.output_index):
+        tool_states = [state for state in self._tool_calls.values() if state.output_index is not None]
+        for state in sorted(tool_states, key=lambda entry: int(entry.output_index)):  # type: ignore[arg-type]
             events.append(
                 _event(
                     "response.function_call_arguments.done",
                     ResponseFunctionCallArgumentsDoneEvent(
-                        output_index=state.output_index, arguments=state.arguments
+                        output_index=int(state.output_index), arguments=state.arguments
                     ).model_dump(),
                 )
             )
-            item = self._output_items[state.output_index]
+            item = self._output_items[int(state.output_index)]
             events.append(
                 _event(
                     "response.output_item.done",
                     ResponseOutputItemDoneEvent(
-                        output_index=state.output_index, item=item
+                        output_index=int(state.output_index), item=item
                     ).model_dump(),
                 )
             )
@@ -128,7 +131,10 @@ class ResponsesStreamTranslator:
 
     def assistant_message(self) -> ChatMessage | None:
         tool_calls: list[ChatToolCall] = []
-        for state in sorted(self._tool_calls.values(), key=lambda entry: entry.output_index):
+        tool_states = [state for state in self._tool_calls.values() if state.output_index is not None]
+        for state in sorted(tool_states, key=lambda entry: int(entry.output_index)):  # type: ignore[arg-type]
+            if not state.call_id or not state.name:
+                continue
             tool_calls.append(
                 ChatToolCall(
                     id=state.call_id,
@@ -191,63 +197,83 @@ class ResponsesStreamTranslator:
         for tool_call in tool_calls:
             index = tool_call.get("index", 0)
             state = self._tool_calls.get(index)
-            call_id = tool_call.get("id") or (state.call_id if state else new_id("call"))
-            function = tool_call.get("function", {}) or {}
-            name = function.get("name") or (state.name if state else "")
-            arguments_delta = function.get("arguments")
             if state is None:
-                external_type = self._tool_map.function_name_map.get(name)
-                item_type = f"{external_type}_call" if external_type else "function_call"
-                item = ResponseOutputItem(
-                    id=new_id("item"),
-                    type=item_type,
-                    call_id=call_id,
-                    name=external_type or name,
-                    arguments="",
-                )
-                output_index = len(self._output_items)
-                self._output_items.append(item)
-                state = ToolCallState(
-                    index=index,
-                    call_id=call_id,
-                    name=name,
-                    arguments="",
-                    output_index=output_index,
-                    external_type=external_type,
-                )
+                state = ToolCallState(index=index)
                 self._tool_calls[index] = state
-                events.append(
-                    _event(
-                        "response.output_item.added",
-                        ResponseOutputItemAddedEvent(
-                            output_index=output_index, item=item
-                        ).model_dump(),
-                    )
-                )
 
-            if name and state.name != name:
+            call_id = tool_call.get("id")
+            if call_id:
+                state.call_id = call_id
+
+            function = tool_call.get("function", {}) or {}
+            name = function.get("name")
+            if name:
                 state.name = name
-                item = self._output_items[state.output_index]
                 if state.external_type is None:
-                    external_type = self._tool_map.function_name_map.get(name)
-                    if external_type:
-                        state.external_type = external_type
-                        item.type = f"{external_type}_call"
-                        item.name = external_type
-                    else:
-                        item.name = name
+                    state.external_type = self._tool_map.function_name_map.get(name)
 
-            if arguments_delta:
+            arguments_delta = function.get("arguments")
+            if arguments_delta is not None:
                 state.arguments += arguments_delta
-                self._output_items[state.output_index].arguments = state.arguments
+                if state.output_index is None:
+                    state.pending_argument_deltas.append(arguments_delta)
+                else:
+                    item = self._output_items[int(state.output_index)]
+                    item.arguments = state.arguments
+                    events.append(
+                        _event(
+                            "response.function_call_arguments.delta",
+                            ResponseFunctionCallArgumentsDeltaEvent(
+                                output_index=int(state.output_index),
+                                delta=arguments_delta,
+                            ).model_dump(),
+                        )
+                    )
+
+            events.extend(self._maybe_emit_tool_call_item_added(state))
+        return events
+
+    def _maybe_emit_tool_call_item_added(self, state: ToolCallState) -> list[dict[str, Any]]:
+        if state.output_index is not None:
+            return []
+        if not state.call_id or not state.name:
+            return []
+
+        external_type = state.external_type
+        item_type = f"{external_type}_call" if external_type else "function_call"
+        item_name = external_type or state.name
+        item = ResponseOutputItem(
+            id=new_id("item"),
+            type=item_type,
+            call_id=state.call_id,
+            name=item_name,
+            arguments="",
+        )
+        output_index = len(self._output_items)
+        self._output_items.append(item)
+        state.output_index = output_index
+
+        events: list[dict[str, Any]] = [
+            _event(
+                "response.output_item.added",
+                ResponseOutputItemAddedEvent(output_index=output_index, item=item).model_dump(),
+            )
+        ]
+
+        if state.pending_argument_deltas:
+            for delta in state.pending_argument_deltas:
+                item.arguments = state.arguments if delta else item.arguments
                 events.append(
                     _event(
                         "response.function_call_arguments.delta",
                         ResponseFunctionCallArgumentsDeltaEvent(
-                            output_index=state.output_index, delta=arguments_delta
+                            output_index=output_index,
+                            delta=delta,
                         ).model_dump(),
                     )
                 )
+            state.pending_argument_deltas.clear()
+
         return events
 
     def _build_response(self) -> ResponsesCreateResponse:
@@ -270,7 +296,7 @@ async def stream_responses_events(
     on_complete: Callable[[ResponsesCreateResponse, ChatMessage | None], Awaitable[None]]
     | None,
 ) -> AsyncIterator[dict[str, Any]]:
-    payload = chat_request.model_dump(exclude_none=True)
+    payload: dict[str, Any] = chat_request.model_dump(exclude_none=True)
     translator = ResponsesStreamTranslator(
         response_id=response_id,
         model=chat_request.model,
@@ -281,6 +307,8 @@ async def stream_responses_events(
 
     class StreamRetryableError(Exception):
         pass
+
+    retryable_status = {429, 500, 502, 503, 504}
 
     retrying = AsyncRetrying(
         retry=retry_if_exception_type(StreamRetryableError),
@@ -296,16 +324,72 @@ async def stream_responses_events(
         async for attempt in retrying:
             with attempt:
                 try:
-                    async for sse in client.stream_chat_completions(payload):
+                    async with client.connect_chat_completions_sse(payload) as event_source:
+                        response = event_source.response
+                        if response.status_code in retryable_status:
+                            await response.aread()
+                            raise StreamRetryableError(
+                                f"Retryable upstream status: {response.status_code}"
+                            )
+
+                        if response.status_code >= 400:
+                            await response.aread()
+                            error_message = extract_error_message(response)
+                            degraded_payload = apply_degrade_fields(
+                                payload, settings.openbridge_degrade_fields, error_message
+                            )
+                            if degraded_payload:
+                                payload = degraded_payload
+                                raise StreamRetryableError(
+                                    "Upstream rejected payload; retrying with degraded fields"
+                                )
+
+                            if not started:
+                                for event in translator.start_events():
+                                    started = True
+                                    yield event
+                            yield translator.failure_event(
+                                {"message": error_message, "type": "upstream_error"}
+                            )
+                            return
+
+                        content_type = (
+                            response.headers.get("content-type", "").partition(";")[0]
+                        )
+                        if "text/event-stream" not in content_type:
+                            await response.aread()
+                            error_message = extract_error_message(response)
+                            degraded_payload = apply_degrade_fields(
+                                payload, settings.openbridge_degrade_fields, error_message
+                            )
+                            if degraded_payload:
+                                payload = degraded_payload
+                                raise StreamRetryableError(
+                                    "Upstream did not return SSE; retrying with degraded fields"
+                                )
+
+                            if not started:
+                                for event in translator.start_events():
+                                    started = True
+                                    yield event
+                            yield translator.failure_event(
+                                {"message": error_message, "type": "upstream_error"}
+                            )
+                            return
+
                         if not started:
                             for event in translator.start_events():
                                 started = True
                                 yield event
-                        if sse.data == "[DONE]":
-                            break
-                        chunk = json.loads(sse.data)
-                        for event in translator.process_chunk(chunk):
-                            yield event
+
+                        async for sse in event_source.aiter_sse():
+                            if not sse.data:
+                                continue
+                            if sse.data == "[DONE]":
+                                break
+                            chunk = json.loads(sse.data)
+                            for event in translator.process_chunk(chunk):
+                                yield event
                     break
                 except Exception as exc:  # noqa: BLE001
                     if not started:
@@ -317,10 +401,10 @@ async def stream_responses_events(
             await on_complete(translator.final_response(), translator.assistant_message())
     except Exception as exc:  # noqa: BLE001
         error = {"message": str(exc), "type": "upstream_error"}
-        if started:
-            yield translator.failure_event(error)
-        else:
-            raise
+        if not started:
+            for event in translator.start_events():
+                yield event
+        yield translator.failure_event(error)
 
 
 def _event(event_name: str, data: dict[str, Any]) -> dict[str, Any]:

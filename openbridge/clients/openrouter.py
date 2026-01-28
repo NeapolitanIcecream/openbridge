@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 import httpx
-from httpx_sse import aconnect_sse
+from httpx_sse import EventSource, aconnect_sse
 
 from openbridge.config import Settings
 
@@ -37,6 +38,14 @@ class OpenRouterClient:
     async def stream_chat_completions(
         self, payload: dict[str, Any]
     ) -> AsyncIterator[Any]:
+        async with self.connect_chat_completions_sse(payload) as event_source:
+            async for sse in event_source.aiter_sse():
+                yield sse
+
+    @asynccontextmanager
+    async def connect_chat_completions_sse(
+        self, payload: dict[str, Any]
+    ) -> AsyncIterator[EventSource]:
         async with aconnect_sse(
             self._client,
             "POST",
@@ -44,5 +53,4 @@ class OpenRouterClient:
             headers=self._headers(),
             json=payload,
         ) as event_source:
-            async for sse in event_source.aiter_sse():
-                yield sse
+            yield event_source

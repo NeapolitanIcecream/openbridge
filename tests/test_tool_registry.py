@@ -1,3 +1,5 @@
+import pytest
+
 from openbridge.models.responses import ResponsesTool
 from openbridge.tools.registry import ToolRegistry
 
@@ -10,3 +12,20 @@ def test_virtualize_builtin_tool():
     assert len(result.chat_tools) == 1
     func_name = result.chat_tools[0].function.name
     assert result.function_name_map[func_name] == "apply_patch"
+
+
+def test_duplicate_function_tool_names_raises():
+    registry = ToolRegistry.default_registry()
+    tools = [
+        ResponsesTool(type="function", name="get_weather"),
+        ResponsesTool(type="function", name="get_weather"),
+    ]
+    with pytest.raises(ValueError, match="Duplicate tool name"):
+        registry.virtualize_tools(tools)
+
+
+def test_function_tool_reserved_prefix_raises():
+    registry = ToolRegistry.default_registry()
+    tools = [ResponsesTool(type="function", name="ob_custom")]
+    with pytest.raises(ValueError, match="reserved prefix"):
+        registry.virtualize_tools(tools)

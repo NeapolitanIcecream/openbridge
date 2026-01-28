@@ -55,6 +55,7 @@ Example model map:
 
 ```bash
 export OPENROUTER_API_KEY="..."
+uv sync
 uv run python main.py
 ```
 
@@ -67,10 +68,13 @@ curl -sS http://127.0.0.1:8000/healthz
 ## Notes
 
 - Tool virtualization is always enabled; built-in/MCP tools are mapped to function tools upstream.
+- Function tool names must not start with `ob_` (reserved for virtualized tools).
 - `previous_response_id` requires a state backend; set `OPENBRIDGE_STATE_BACKEND=redis` for multi-instance use.
 
 ## Tests
 
 ```bash
+uv sync --extra dev
 uv run pytest
+uv run ruff check .
 ```

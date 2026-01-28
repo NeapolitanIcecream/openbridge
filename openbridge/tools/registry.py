@@ -71,13 +71,18 @@ class ToolRegistry:
                 )
                 if not function.name:
                     continue
-                name = self._unique_name(function.name, seen_names)
-                seen_names.add(name)
+                if function.name.startswith(self._prefix):
+                    raise ValueError(
+                        f"Function tool name must not start with reserved prefix {self._prefix!r}: {function.name!r}"
+                    )
+                if function.name in seen_names:
+                    raise ValueError(f"Duplicate tool name: {function.name!r}")
+                seen_names.add(function.name)
                 chat_tools.append(
                     ChatToolDefinition(
                         type="function",
                         function=ChatToolFunction(
-                            name=name,
+                            name=function.name,
                             description=function.description,
                             parameters=function.parameters,
                         ),
@@ -86,7 +91,11 @@ class ToolRegistry:
             else:
                 external_type = tool.type
                 tool_def = self.tool_definition_for_external(external_type)
-                name = self._unique_name(tool_def.function.name, seen_names)
+                name = tool_def.function.name
+                if name in seen_names:
+                    raise ValueError(
+                        f"Tool name collision for external type {external_type!r}: {name!r}"
+                    )
                 seen_names.add(name)
                 chat_tools.append(
                     ChatToolDefinition(
@@ -116,11 +125,4 @@ class ToolRegistry:
                 pass
         return json_dumps(data)
 
-    @staticmethod
-    def _unique_name(name: str, seen_names: set[str]) -> str:
-        if name not in seen_names:
-            return name
-        suffix = 1
-        while f"{name}_{suffix}" in seen_names:
-            suffix += 1
-        return f"{name}_{suffix}"
+    # Note: All virtualized tool names are deterministic and must be collision-free.
