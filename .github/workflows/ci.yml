@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request: {}
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # Some modules load settings at import time.
+      # Use a dummy key to avoid requiring repository secrets for unit tests.
+      OPENROUTER_API_KEY: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --extra dev
+
+      - name: Run tests
+        run: uv run pytest
