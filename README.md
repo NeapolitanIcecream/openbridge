@@ -1,77 +1,86 @@
 # OpenBridge
 
-OpenBridge is a compatibility layer that exposes an OpenAI Responses API surface while sending requests to OpenRouter Chat Completions. It focuses on stable tool calling, streaming conversion, and optional state for `previous_response_id`.
+OpenBridge is a lightweight compatibility layer that allows applications designed for the OpenAI Responses API (`POST /v1/responses`) to seamlessly use OpenRouter's Chat Completions API.
 
-## Compatibility Levels
+It bridges the gap between stateful, tool-centric clients (like AI agents) and the widely compatible Chat Completions standard, enabling access to a vast array of models via OpenRouter without changing client code.
 
-- Level 0: plain text, non-stream, no tools
-- Level 1: tool calling + tool loop, streaming
-- Level 2: `previous_response_id` + structured outputs (json_schema)
-- Level 3: built-in/MCP tools via function virtualization
+## Key Features
 
-## Endpoints
+- **API Compatibility**: Exposes a standard `POST /v1/responses` endpoint that translates requests to OpenRouter's Chat Completions format.
+- **Tool Calling Support**: Full support for function calling and tool loops. Automatically virtualizes built-in tools (like `apply_patch`) as standard function tools.
+- **Streaming**: Robust Server-Sent Events (SSE) translation, converting Chat Completions chunks into Responses API events (e.g., `output_text.delta`, `output_item.added`).
+- **Structured Outputs**: Supports `json_schema` for reliable, structured data extraction.
+- **Optional State Management**: Implements `previous_response_id` support using a configurable backend (Memory or Redis), enabling stateful conversations on top of stateless upstream APIs.
 
-- `POST /v1/responses` (stream and non-stream)
-- `GET /v1/responses/{response_id}` (state enabled only)
-- `DELETE /v1/responses/{response_id}` (state enabled only)
-- `GET /healthz`
-- `GET /version`
-- `GET /metrics`
+## Quick Start
 
-## Configuration
+### Prerequisites
 
-Required:
+- Python 3.12+
+- [uv](https://github.com/astral-sh/uv) package manager
+- An [OpenRouter API Key](https://openrouter.ai/keys)
 
-- `OPENROUTER_API_KEY`
-
-Optional:
-
-- `OPENROUTER_BASE_URL` (default: `https://openrouter.ai/api/v1`)
-- `OPENROUTER_HTTP_REFERER`
-- `OPENROUTER_X_TITLE`
-- `OPENBRIDGE_HOST` (default: `127.0.0.1`)
-- `OPENBRIDGE_PORT` (default: `8000`)
-- `OPENBRIDGE_LOG_LEVEL` (default: `INFO`)
-- `OPENBRIDGE_STATE_BACKEND` (`memory`, `redis`, `disabled`)
-- `OPENBRIDGE_REDIS_URL`
-- `OPENBRIDGE_MODEL_MAP_PATH` (JSON mapping of model aliases)
-- `OPENBRIDGE_CLIENT_API_KEY` (optional client auth)
-- `OPENBRIDGE_REQUEST_TIMEOUT_S`
-- `OPENBRIDGE_RETRY_MAX_ATTEMPTS`
-- `OPENBRIDGE_RETRY_MAX_SECONDS`
-- `OPENBRIDGE_RETRY_BACKOFF`
-- `OPENBRIDGE_DEGRADE_FIELDS` (comma-separated)
-- `OPENBRIDGE_MEMORY_TTL_SECONDS`
-
-Example model map:
-
-```json
-{
-  "gpt-4.1": "openai/gpt-4.1"
-}
-```
-
-## Run
+### Run
 
 ```bash
-export OPENROUTER_API_KEY="..."
+# Set your OpenRouter API Key
+export OPENROUTER_API_KEY="sk-or-..."
+
+# Install dependencies and run
 uv sync
 uv run python main.py
 ```
 
-## Quick Test
+The server will start at `http://127.0.0.1:8000`.
+
+### Health Check
 
 ```bash
 curl -sS http://127.0.0.1:8000/healthz
 ```
 
-## Notes
+## Configuration
 
-- Tool virtualization is always enabled; built-in/MCP tools are mapped to function tools upstream.
-- Function tool names must not start with `ob_` (reserved for virtualized tools).
-- `previous_response_id` requires a state backend; set `OPENBRIDGE_STATE_BACKEND=redis` for multi-instance use.
+Configuration is managed via environment variables.
 
-## Tests
+### Required
+
+- `OPENROUTER_API_KEY`: Your OpenRouter API key.
+
+### Optional
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Upstream API URL. |
+| `OPENBRIDGE_HOST` | `127.0.0.1` | Host to bind the server to. |
+| `OPENBRIDGE_PORT` | `8000` | Port to bind the server to. |
+| `OPENBRIDGE_STATE_BACKEND` | `memory` | State backend: `memory`, `redis`, or `disabled`. |
+| `OPENBRIDGE_REDIS_URL` | - | Redis URL (required if backend is `redis`). |
+| `OPENBRIDGE_MODEL_MAP_PATH` | - | Path to a JSON file for mapping model aliases. |
+
+### Model Mapping
+
+You can map simplified model names to OpenRouter specific IDs using a JSON file:
+
+```json
+{
+  "gpt-4o": "openai/gpt-4o",
+  "claude-3.5-sonnet": "anthropic/claude-3.5-sonnet"
+}
+```
+
+## Endpoints
+
+- `POST /v1/responses`: Main endpoint for creating responses (stream and non-stream).
+- `GET /v1/responses/{response_id}`: Retrieve past response details (requires state enabled).
+- `DELETE /v1/responses/{response_id}`: Delete a past response (requires state enabled).
+- `GET /healthz`: Service health check.
+- `GET /version`: Service version info.
+- `GET /metrics`: Prometheus metrics.
+
+## Development
+
+Run tests and linting:
 
 ```bash
 uv sync --extra dev
