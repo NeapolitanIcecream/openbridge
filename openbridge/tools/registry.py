@@ -17,8 +17,7 @@ class ToolVirtualizationResult:
 
 
 class ToolRegistry:
-    def __init__(self, prefix: str = "ob_") -> None:
-        self._prefix = prefix
+    def __init__(self) -> None:
         self._builtins: dict[str, ChatToolDefinition] = default_builtin_tools()
 
     @classmethod
@@ -34,7 +33,7 @@ class ToolRegistry:
         tool_def = self._builtins.get(external_type)
         if tool_def is not None:
             return tool_def.function.name
-        return f"{self._prefix}{external_type}"
+        return external_type
 
     def tool_definition_for_external(self, external_type: str) -> ChatToolDefinition:
         tool_def = self._builtins.get(external_type)
@@ -73,10 +72,6 @@ class ToolRegistry:
                 )
                 if not function.name:
                     continue
-                if function.name.startswith(self._prefix):
-                    raise ValueError(
-                        f"Function tool name must not start with reserved prefix {self._prefix!r}: {function.name!r}"
-                    )
                 if function.name in seen_names:
                     raise ValueError(f"Duplicate tool name: {function.name!r}")
                 seen_names.add(function.name)

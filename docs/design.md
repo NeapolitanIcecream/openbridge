@@ -144,7 +144,7 @@ openbridge/
 
 - **内置工具协议**：至少提供 `apply_patch`、`shell` 等与现有探针脚本一致的 schema（见 `docs/openrouter_apply_patch_probe.py` 的 schema 示例）。
 - **可扩展**：允许通过配置文件/代码注册新工具（name、description、parameters JSON schema、output 处理策略）。
-- **命名冲突处理**：对虚拟化工具建议自动加前缀（例如 `ob_apply_patch`），并保存“外部 tool 类型 ↔ 内部 function 名”映射，保证 round-trip 可逆。
+- **命名冲突处理**：虚拟化工具的 function 名应与外部 tool 类型对齐，并保存“外部 tool 类型 ↔ function 名”映射；若发生命名冲突，应该尽早拒绝请求（fail fast）。
 
 #### 6.4 Structured Outputs（JSON Schema）
 

@@ -10,9 +10,9 @@ def test_apply_patch_tool_structure():
     tool = apply_patch_tool()
 
     assert tool.type == "function"
-    assert tool.function.name == "ob_apply_patch"
+    assert tool.function.name == "apply_patch"
     assert tool.function.description is not None
-    assert "Cursor ApplyPatch" in tool.function.description
+    assert "apply_patch" in tool.function.description
     assert tool.function.parameters is not None
 
 
@@ -23,10 +23,10 @@ def test_apply_patch_tool_parameters():
     assert params is not None
 
     assert params["type"] == "object"
-    assert "patch" in params["properties"]
-    assert params["properties"]["patch"]["type"] == "string"
+    assert "input" in params["properties"]
+    assert params["properties"]["input"]["type"] == "string"
     assert "required" in params
-    assert "patch" in params["required"]
+    assert "input" in params["required"]
     assert params["additionalProperties"] is False
 
 
@@ -35,7 +35,7 @@ def test_shell_tool_structure():
     tool = shell_tool()
 
     assert tool.type == "function"
-    assert tool.function.name == "ob_shell"
+    assert tool.function.name == "shell"
     assert tool.function.description is not None
     assert "shell command" in tool.function.description
     assert tool.function.parameters is not None
@@ -78,17 +78,17 @@ def test_default_builtin_tools_tool_types():
 
     assert apply_patch.type == "function"
     assert shell.type == "function"
-    assert apply_patch.function.name == "ob_apply_patch"
-    assert shell.function.name == "ob_shell"
+    assert apply_patch.function.name == "apply_patch"
+    assert shell.function.name == "shell"
 
 
 def test_default_builtin_tools_keys_match_external_names():
     """Test that default_builtin_tools keys match external names (not internal names)."""
     tools = default_builtin_tools()
 
-    # Keys should be external names (without 'ob_' prefix)
+    # Keys should be external names
     assert "apply_patch" in tools
     assert "shell" in tools
-    # Internal names should not be keys
+    # Internal names should not be keys (defensive)
     assert "ob_apply_patch" not in tools
     assert "ob_shell" not in tools

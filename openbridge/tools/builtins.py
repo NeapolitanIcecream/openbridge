@@ -7,17 +7,20 @@ def apply_patch_tool() -> ChatToolDefinition:
     return ChatToolDefinition(
         type="function",
         function=ChatToolFunction(
-            name="ob_apply_patch",
-            description="Return a Cursor ApplyPatch patch as a string.",
+            name="apply_patch",
+            description=(
+                "Use the `apply_patch` tool to edit files. "
+                "Return the entire apply_patch patch as a string in `input`."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "patch": {
+                    "input": {
                         "type": "string",
-                        "description": "Cursor ApplyPatch patch string.",
+                        "description": "The entire contents of the apply_patch command.",
                     }
                 },
-                "required": ["patch"],
+                "required": ["input"],
                 "additionalProperties": False,
             },
         ),
@@ -28,7 +31,27 @@ def shell_tool() -> ChatToolDefinition:
     return ChatToolDefinition(
         type="function",
         function=ChatToolFunction(
-            name="ob_shell",
+            name="shell",
+            description="Return a shell command to run locally.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"},
+                    "timeout_ms": {"type": "integer", "minimum": 0},
+                    "cwd": {"type": "string"},
+                },
+                "required": ["command"],
+                "additionalProperties": False,
+            },
+        ),
+    )
+
+
+def local_shell_tool() -> ChatToolDefinition:
+    return ChatToolDefinition(
+        type="function",
+        function=ChatToolFunction(
+            name="local_shell",
             description="Return a shell command to run locally.",
             parameters={
                 "type": "object",
@@ -48,4 +71,5 @@ def default_builtin_tools() -> dict[str, ChatToolDefinition]:
     return {
         "apply_patch": apply_patch_tool(),
         "shell": shell_tool(),
+        "local_shell": local_shell_tool(),
     }

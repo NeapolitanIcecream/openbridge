@@ -129,8 +129,8 @@ def test_chat_response_with_builtin_tool():
     """Test converting a chat response with builtin tool (apply_patch)."""
     tool_map = ToolVirtualizationResult(
         chat_tools=[],
-        function_name_map={"ob_apply_patch": "apply_patch"},
-        external_name_map={"apply_patch": "ob_apply_patch"},
+        function_name_map={"apply_patch": "apply_patch"},
+        external_name_map={"apply_patch": "apply_patch"},
     )
     chat_response = ChatCompletionResponse(
         choices=[
@@ -142,7 +142,7 @@ def test_chat_response_with_builtin_tool():
                             id="call_2",
                             type="function",
                             function=ChatToolCallFunction(
-                                name="ob_apply_patch", arguments='{"patch":"diff"}'
+                                name="apply_patch", arguments='{"input":"diff"}'
                             ),
                         )
                     ],

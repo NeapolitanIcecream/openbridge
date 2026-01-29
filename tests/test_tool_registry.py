@@ -24,8 +24,11 @@ def test_duplicate_function_tool_names_raises():
         registry.virtualize_tools(tools)
 
 
-def test_function_tool_reserved_prefix_raises():
+def test_tool_name_collision_between_function_and_builtin_raises():
     registry = ToolRegistry.default_registry()
-    tools = [ResponsesTool(type="function", name="ob_custom")]
-    with pytest.raises(ValueError, match="reserved prefix"):
+    tools = [
+        ResponsesTool(type="function", name="apply_patch"),
+        ResponsesTool(type="apply_patch"),
+    ]
+    with pytest.raises(ValueError, match="Tool name collision"):
         registry.virtualize_tools(tools)

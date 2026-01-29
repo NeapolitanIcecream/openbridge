@@ -39,8 +39,8 @@ def test_streaming_text_events():
 def test_streaming_tool_call_events():
     tool_map = ToolVirtualizationResult(
         chat_tools=[],
-        function_name_map={"ob_apply_patch": "apply_patch"},
-        external_name_map={"apply_patch": "ob_apply_patch"},
+        function_name_map={"apply_patch": "apply_patch"},
+        external_name_map={"apply_patch": "apply_patch"},
     )
     translator = ResponsesStreamTranslator(
         response_id="resp_2",
@@ -62,8 +62,8 @@ def test_streaming_tool_call_events():
                                 "id": "call_1",
                                 "type": "function",
                                 "function": {
-                                    "name": "ob_apply_patch",
-                                    "arguments": '{"patch":"x"}',
+                                    "name": "apply_patch",
+                                    "arguments": '{"input":"x"}',
                                 },
                             }
                         ]
@@ -81,14 +81,14 @@ def test_streaming_tool_call_events():
     ]
     assert delta_events
     delta_payload = json.loads(delta_events[0]["data"])
-    assert delta_payload["delta"] == '{"patch":"x"}'
+    assert delta_payload["delta"] == '{"input":"x"}'
 
 
 def test_streaming_ignores_empty_text_delta():
     tool_map = ToolVirtualizationResult(
         chat_tools=[],
-        function_name_map={"ob_apply_patch": "apply_patch"},
-        external_name_map={"apply_patch": "ob_apply_patch"},
+        function_name_map={"apply_patch": "apply_patch"},
+        external_name_map={"apply_patch": "apply_patch"},
     )
     translator = ResponsesStreamTranslator(
         response_id="resp_4",
@@ -112,8 +112,8 @@ def test_streaming_ignores_empty_text_delta():
                                 "id": "call_1",
                                 "type": "function",
                                 "function": {
-                                    "name": "ob_apply_patch",
-                                    "arguments": '{"patch":"x"}',
+                                    "name": "apply_patch",
+                                    "arguments": '{"input":"x"}',
                                 },
                             }
                         ]
@@ -133,8 +133,8 @@ def test_streaming_ignores_empty_text_delta():
 def test_streaming_tool_call_id_late():
     tool_map = ToolVirtualizationResult(
         chat_tools=[],
-        function_name_map={"ob_apply_patch": "apply_patch"},
-        external_name_map={"apply_patch": "ob_apply_patch"},
+        function_name_map={"apply_patch": "apply_patch"},
+        external_name_map={"apply_patch": "apply_patch"},
     )
     translator = ResponsesStreamTranslator(
         response_id="resp_3",
@@ -157,8 +157,8 @@ def test_streaming_tool_call_id_late():
                                 "index": 0,
                                 "type": "function",
                                 "function": {
-                                    "name": "ob_apply_patch",
-                                    "arguments": '{"patch":"x"}',
+                                    "name": "apply_patch",
+                                    "arguments": '{"input":"x"}',
                                 },
                             }
                         ]
@@ -203,7 +203,7 @@ def test_streaming_tool_call_id_late():
     ]
     assert delta_events
     delta_payload = json.loads(delta_events[0]["data"])
-    assert delta_payload["delta"] == '{"patch":"x"}'
+    assert delta_payload["delta"] == '{"input":"x"}'
 
 
 @pytest.mark.asyncio

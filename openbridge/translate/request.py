@@ -354,9 +354,6 @@ def infer_tools_from_input_items(
             name = (item.name or "").strip()
             if not name:
                 continue
-            # Avoid creating user-defined tools with the internal reserved prefix.
-            if name.startswith("ob_"):
-                continue
             key = f"function:{name}"
             if key in seen:
                 continue

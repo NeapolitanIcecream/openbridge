@@ -67,12 +67,12 @@ def _default_parameters_schema(tool_name: str) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "patch": {
+                "input": {
                     "type": "string",
-                    "description": "Cursor ApplyPatch patch string.",
+                    "description": "The entire contents of the apply_patch command.",
                 }
             },
-            "required": ["patch"],
+            "required": ["input"],
             "additionalProperties": False,
         }
 
@@ -153,7 +153,7 @@ def _default_parameters_schema(tool_name: str) -> dict[str, Any]:
 
 def _default_args(tool_name: str, *, patch_text: str) -> dict[str, Any]:
     if tool_name == "apply_patch":
-        return {"patch": patch_text}
+        return {"input": patch_text}
     if tool_name in ("shell", "local_shell"):
         return {"command": DEFAULT_SHELL_COMMAND, "timeout_ms": 10_000}
     if tool_name == "web_search":
@@ -169,16 +169,18 @@ def _default_args(tool_name: str, *, patch_text: str) -> dict[str, Any]:
 
 def _build_user_prompt(*, tool_name: str, args_obj: dict[str, Any]) -> str:
     if tool_name == "apply_patch":
-        patch = args_obj.get("patch")
-        if not isinstance(patch, str) or not patch.strip():
-            raise SystemExit("apply_patch requires args.patch to be a non-empty string")
+        patch_input = args_obj.get("input")
+        if not isinstance(patch_input, str) or not patch_input.strip():
+            raise SystemExit(
+                "apply_patch requires args.input to be a non-empty string"
+            )
         return (
             "Call the tool `apply_patch` with exactly one argument object.\n"
-            "The argument object MUST have exactly one key: `patch`.\n"
-            "Set `patch` to EXACTLY the following string (including newlines), "
+            "The argument object MUST have exactly one key: `input`.\n"
+            "Set `input` to EXACTLY the following string (including newlines), "
             "without adding any extra characters:\n"
             "<PATCH>\n"
-            f"{patch}"
+            f"{patch_input}"
             "</PATCH>\n"
             "Do not wrap the patch in markdown fences."
         )
@@ -384,9 +386,9 @@ def _post_stream(
         first = reconstructed.get(0) or next(iter(reconstructed.values()))
         try:
             args = json.loads(first["function"]["arguments"])
-            patch = args.get("patch")
+            patch = args.get("input")
             if isinstance(patch, str):
-                _print_header("Extracted patch (args.patch)")
+                _print_header("Extracted patch (args.input)")
                 print(patch)
         except Exception:
             pass

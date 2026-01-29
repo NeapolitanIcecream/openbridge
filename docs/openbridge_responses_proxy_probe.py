@@ -335,8 +335,8 @@ def _build_tool_call_request_builtin(
     if tool_type == "apply_patch":
         user = (
             "Call the only available tool with exactly one argument object.\n"
-            "The argument object MUST have exactly one key: `patch`.\n"
-            "Set `patch` to EXACTLY the following string (including newlines), without adding any extra characters:\n"
+            "The argument object MUST have exactly one key: `input`.\n"
+            "Set `input` to EXACTLY the following string (including newlines), without adding any extra characters:\n"
             "<PATCH>\n"
             f"{patch}"
             "</PATCH>\n"
@@ -1053,22 +1053,23 @@ def scenario_allowed_tools_filter(ctx: RunContext) -> ScenarioResult:
     return _ok(name, "allowed_tools filtered tools ok")
 
 
-def scenario_reserved_prefix_rejected(ctx: RunContext) -> ScenarioResult:
-    name = "reserved_prefix_rejected"
+def scenario_tool_name_collision_rejected(ctx: RunContext) -> ScenarioResult:
+    name = "tool_name_collision_rejected"
     payload = {
         "model": ctx.model,
         "instructions": "Reply with exactly 'OK' and nothing else.",
         "input": "ping",
         "tools": [
+            {"type": "apply_patch"},
             {
                 "type": "function",
                 "function": {
-                    "name": "ob_bad_tool_name",
-                    "description": "Should be rejected (reserved prefix).",
+                    "name": "apply_patch",
+                    "description": "Intentionally collides with the built-in apply_patch tool.",
                     "parameters": {
                         "type": "object",
-                        "properties": {"payload": {"type": "string"}},
-                        "required": ["payload"],
+                        "properties": {"input": {"type": "string"}},
+                        "required": ["input"],
                         "additionalProperties": False,
                     },
                 },
@@ -1094,10 +1095,10 @@ def scenario_reserved_prefix_rejected(ctx: RunContext) -> ScenarioResult:
         _print_response_json(f"{name} response JSON", data)
         return _fail(name, f"expected HTTP 400, got {r.status_code}")
     detail = data.get("detail")
-    if not isinstance(detail, str) or "reserved prefix" not in detail:
+    if not isinstance(detail, str) or "Tool name collision" not in detail:
         _print_response_json(f"{name} response JSON", data)
-        return _warn(name, "got HTTP 400 but detail did not mention reserved prefix")
-    return _ok(name, "reserved prefix rejected")
+        return _warn(name, "got HTTP 400 but detail did not mention tool name collision")
+    return _ok(name, "tool name collision rejected")
 
 
 def scenario_structured_outputs_json_schema(ctx: RunContext) -> ScenarioResult:
@@ -1294,7 +1295,7 @@ def _scenario_catalog() -> dict[str, ScenarioFn]:
         "stream_tool_call": scenario_stream_tool_call,
         "function_tool_loop": scenario_function_tool_loop,
         "allowed_tools_filter": scenario_allowed_tools_filter,
-        "reserved_prefix_rejected": scenario_reserved_prefix_rejected,
+        "tool_name_collision_rejected": scenario_tool_name_collision_rejected,
         "structured_outputs_json_schema": scenario_structured_outputs_json_schema,
         "state_endpoints": scenario_state_endpoints,
         "store_false": scenario_store_false,
@@ -1319,7 +1320,7 @@ def _suite_to_scenarios(suite: str) -> list[str]:
             "stream_tool_call",
             "function_tool_loop",
             "allowed_tools_filter",
-            "reserved_prefix_rejected",
+            "tool_name_collision_rejected",
             "structured_outputs_json_schema",
             "state_endpoints",
             "store_false",

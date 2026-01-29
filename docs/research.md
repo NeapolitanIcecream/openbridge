@@ -1,6 +1,6 @@
 ## 调研报告：用中间层把 OpenAI Responses API 转成 OpenRouter Chat Completions API
 
-更新时间：2026-01-27
+更新时间：2026-01-29
 
 ### 1. 背景与目标
 
@@ -459,6 +459,24 @@ function 虚拟化解决的是“接口形状/传话筒”的问题，剩下的�
 - `shell` / `apply_patch`：执行器通常就是 Codex/本地集成 → 成本低（已实测可用）
 - `web_search`：可以让执行器自己搜（function 虚拟化），也可以选择依赖 OpenRouter 的 server-side web_search（但这时不走 tool_calls）
 - `file_search` / `code_interpreter` / `computer_use_preview`：也能协议化，但你需要提供对应的检索库、沙箱执行、浏览器/截图环境等
+
+#### 8.4 Codex (Responses API) tool specs: `apply_patch` schemas and built-in tool types
+
+Codex exposes `apply_patch` in two different tool shapes (selected by `apply_patch_tool_type`):
+
+- **Freeform / custom tool (`tools[].type="custom"`)**: the tool argument is not JSON; it is a raw patch text constrained by a Lark grammar (`tool_apply_patch.lark`).
+- **Function tool (`tools[].type="function"`)**: JSON arguments with exactly one required field:
+  - `input: string`
+  - `additionalProperties: false`
+
+`apply_patch` can also be invoked as a **shell command** because Codex CLI places an `apply_patch` executable in `PATH` (arg0-dispatch). When both are available, providing `apply_patch` as a dedicated tool is the preferred path.
+
+If "built-in tool type" means a Responses tool whose `tools[].type` is **not** `"function"`, Codex uses:
+
+- `web_search`
+- `local_shell`
+
+No direct usage was found for `file_search`, `computer_use`, `code_interpreter`, `image_generation`, or `mcp` as Responses built-in tool types.
 
 ### 9. 实验脚本：探测 OpenRouter Chat Completions 的 tool_calls / server-side tool use
 
