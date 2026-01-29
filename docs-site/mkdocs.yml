@@ -5,4 +5,9 @@ theme:
 
 nav:
   - Home: index.md
-  - Logging: logging.md
+  - Concepts:
+      - Architecture: architecture.md
+      - API compatibility: compatibility.md
+  - Reference:
+      - Configuration: configuration.md
+      - Logging & tracing: logging.md

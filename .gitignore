@@ -154,6 +154,12 @@ venv.bak/
 # mkdocs documentation
 /site
 
+# mkdocs documentation (docs-site)
+docs-site/site/
+
+# Internal notes (local only)
+docs/internal/
+
 # mypy
 .mypy_cache/
 .dmypy.json
