@@ -15,7 +15,9 @@ def test_cli_debug_works_without_openrouter_api_key() -> None:
         respx.get("http://127.0.0.1:8000/v1/debug/responses/resp_1").mock(
             return_value=httpx.Response(200, json={"response_id": "resp_1"})
         )
-        result = runner.invoke(app, ["debug", "resp_1", "--raw"], env={"OPENROUTER_API_KEY": None})
+        result = runner.invoke(
+            app, ["debug", "resp_1", "--raw"], env={"OPENROUTER_API_KEY": None}
+        )
         assert result.exit_code == 0
         assert '"response_id": "resp_1"' in result.stdout
 

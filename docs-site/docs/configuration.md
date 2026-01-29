@@ -42,6 +42,7 @@ Example:
 
 - `OPENBRIDGE_STATE_BACKEND`: `memory` (default) | `redis` | `disabled`
 - `OPENBRIDGE_REDIS_URL` (default: `redis://localhost:6379/0`)
+- `OPENBRIDGE_STATE_KEY_PREFIX` (default: `openbridge:state`): Redis key prefix for stored responses (`<prefix>:<response_id>`). If a prefixed key is missing, OpenBridge also checks the raw `<response_id>` key.
 - `OPENBRIDGE_MEMORY_TTL_SECONDS` (default: `3600`)
 
 When state is disabled, `previous_response_id` and `GET/DELETE /v1/responses/{id}` return

@@ -21,4 +21,3 @@ def test_cli_missing_api_key_shows_clean_error() -> None:
     assert result.exit_code == 1
     assert "configuration error" in result.stderr.lower()
     assert "OPENROUTER_API_KEY" in result.stderr
-

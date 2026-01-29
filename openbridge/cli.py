@@ -74,7 +74,9 @@ def _run_server(
 
     setup_logging(
         settings.openbridge_log_level,
-        log_file=str(settings.openbridge_log_file) if settings.openbridge_log_file else None,
+        log_file=str(settings.openbridge_log_file)
+        if settings.openbridge_log_file
+        else None,
     )
     logger = get_logger()
     scheme = "https" if settings.openbridge_ssl_certfile else "http"
@@ -400,4 +402,3 @@ def debug(
         return
 
     _console.print(Syntax(text, "json", word_wrap=False))
-

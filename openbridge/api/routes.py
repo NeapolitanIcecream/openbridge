@@ -49,7 +49,9 @@ def _debug_endpoints_enabled(request: Request) -> bool:
     return bool(getattr(settings, "openbridge_debug_endpoints", False))
 
 
-def _log_trace_if_enabled(settings: Any, logger: Any, trace_record: TraceRecord) -> None:
+def _log_trace_if_enabled(
+    settings: Any, logger: Any, trace_record: TraceRecord
+) -> None:
     if not getattr(settings, "openbridge_trace_log", False):
         return
     try:
@@ -228,7 +230,10 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
                 chat_request.model_dump(exclude_none=True), cfg=trace_cfg
             ),
             messages_for_state=sanitize_trace_value(
-                [m.model_dump(exclude_none=True) for m in translation.messages_for_state],
+                [
+                    m.model_dump(exclude_none=True)
+                    for m in translation.messages_for_state
+                ],
                 cfg=trace_cfg,
             ),
             tool_map={
@@ -266,7 +271,8 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
                     )
                     if assistant_message is not None:
                         trace_record.assistant_message = sanitize_trace_value(
-                            assistant_message.model_dump(exclude_none=True), cfg=trace_cfg
+                            assistant_message.model_dump(exclude_none=True),
+                            cfg=trace_cfg,
                         )
                     await trace_store.set(
                         trace_record, settings.openbridge_trace_ttl_seconds
@@ -294,7 +300,9 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
                     trace_record.assistant_message = sanitize_trace_value(
                         assistant_message.model_dump(exclude_none=True), cfg=trace_cfg
                     )
-                await trace_store.set(trace_record, settings.openbridge_trace_ttl_seconds)
+                await trace_store.set(
+                    trace_record, settings.openbridge_trace_ttl_seconds
+                )
                 _log_trace_if_enabled(settings, logger, trace_record)
 
         raw_stream = stream_responses_events(
@@ -376,9 +384,8 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
         return chat_response, responses
 
     chat_response, responses = _build_responses(upstream_response)
-    if (
-        not responses.output
-        and (payload.max_output_tokens is None or payload.max_output_tokens > 0)
+    if not responses.output and (
+        payload.max_output_tokens is None or payload.max_output_tokens > 0
     ):
         # Some upstreams occasionally return HTTP 200 with an empty choices/message.
         # Retry once to improve reliability for short "ACK/OK" responses.
@@ -398,9 +405,7 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
                     "type": "upstream_error",
                     "message": extract_error_message(upstream_response2),
                 }
-            await trace_store.set(
-                trace_record, settings.openbridge_trace_ttl_seconds
-            )
+            await trace_store.set(trace_record, settings.openbridge_trace_ttl_seconds)
 
         if upstream_response2.status_code >= 400:
             return _upstream_error_response(upstream_response2)
@@ -418,7 +423,9 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
                 status_code=502, detail="Upstream returned empty completion"
             )
 
-    assistant_message = chat_response.choices[0].message if chat_response.choices else None
+    assistant_message = (
+        chat_response.choices[0].message if chat_response.choices else None
+    )
     if trace_store is not None and trace_record is not None:
         trace_record.updated_at = now_ts()
         trace_record.responses_response = sanitize_trace_value(

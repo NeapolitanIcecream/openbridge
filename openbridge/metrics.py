@@ -24,13 +24,10 @@ def metrics_response() -> Response:
 
 
 class RequestTimer:
-    def __init__(self, path: str, method: str) -> None:
-        self._path = path
+    def __init__(self, method: str) -> None:
         self._method = method
         self._start = time.time()
 
-    def observe(self, status_code: int) -> None:
-        REQUEST_COUNT.labels(self._path, self._method, str(status_code)).inc()
-        REQUEST_LATENCY.labels(self._path, self._method).observe(
-            time.time() - self._start
-        )
+    def observe(self, status_code: int, *, path: str) -> None:
+        REQUEST_COUNT.labels(path, self._method, str(status_code)).inc()
+        REQUEST_LATENCY.labels(path, self._method).observe(time.time() - self._start)

@@ -41,6 +41,10 @@ class Settings(BaseSettings):
         "redis://localhost:6379/0",
         alias="OPENBRIDGE_REDIS_URL",
     )
+    openbridge_state_key_prefix: str = Field(
+        "openbridge:state",
+        alias="OPENBRIDGE_STATE_KEY_PREFIX",
+    )
     openbridge_model_map_path: Path | None = Field(
         None,
         alias="OPENBRIDGE_MODEL_MAP_PATH",
@@ -151,9 +155,8 @@ class Settings(BaseSettings):
             raise ValueError("OPENBRIDGE_TRACE_MAX_ENTRIES must be > 0")
         if self.openbridge_trace_max_chars < 0:
             raise ValueError("OPENBRIDGE_TRACE_MAX_CHARS must be >= 0")
-        if (
-            self.openbridge_trace_backend == "redis"
-            and not (self.openbridge_trace_redis_url or self.openbridge_redis_url)
+        if self.openbridge_trace_backend == "redis" and not (
+            self.openbridge_trace_redis_url or self.openbridge_redis_url
         ):
             raise ValueError(
                 "OPENBRIDGE_TRACE_REDIS_URL must be set when OPENBRIDGE_TRACE_BACKEND=redis"

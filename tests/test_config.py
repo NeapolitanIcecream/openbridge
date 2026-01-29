@@ -27,6 +27,7 @@ def clean_env():
         "OPENBRIDGE_LOG_LEVEL",
         "OPENBRIDGE_STATE_BACKEND",
         "OPENBRIDGE_REDIS_URL",
+        "OPENBRIDGE_STATE_KEY_PREFIX",
         "OPENBRIDGE_DEGRADE_FIELDS",
         "OPENBRIDGE_MODEL_MAP_PATH",
         "OPENBRIDGE_CLIENT_API_KEY",
@@ -65,6 +66,7 @@ def test_settings_default_values():
     assert settings.openbridge_log_level == "INFO"
     assert settings.openbridge_state_backend == "memory"
     assert settings.openbridge_redis_url == "redis://localhost:6379/0"
+    assert settings.openbridge_state_key_prefix == "openbridge:state"
     assert settings.openbridge_request_timeout_s == 120.0
     assert settings.openbridge_retry_max_attempts == 2
     assert settings.openbridge_retry_max_seconds == 15.0
@@ -80,6 +82,7 @@ def test_settings_from_environment_variables():
     os.environ["OPENBRIDGE_PORT"] = "9000"
     os.environ["OPENBRIDGE_LOG_LEVEL"] = "DEBUG"
     os.environ["OPENBRIDGE_STATE_BACKEND"] = "redis"
+    os.environ["OPENBRIDGE_STATE_KEY_PREFIX"] = "openbridge:test_state"
 
     settings = _settings_from_env()
 
@@ -88,6 +91,7 @@ def test_settings_from_environment_variables():
     assert settings.openbridge_port == 9000
     assert settings.openbridge_log_level == "DEBUG"
     assert settings.openbridge_state_backend == "redis"
+    assert settings.openbridge_state_key_prefix == "openbridge:test_state"
 
 
 def test_settings_state_backend_options():

@@ -46,11 +46,21 @@ def _openai_error_json(status_code: int, message: str) -> dict:
     return data
 
 
+def _metrics_path_label(request: Request) -> str:
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    if isinstance(path, str) and path:
+        return path
+    return "__unmatched__"
+
+
 def create_app() -> FastAPI:
     settings = load_settings()
     setup_logging(
         settings.openbridge_log_level,
-        log_file=str(settings.openbridge_log_file) if settings.openbridge_log_file else None,
+        log_file=str(settings.openbridge_log_file)
+        if settings.openbridge_log_file
+        else None,
     )
 
     @asynccontextmanager
@@ -59,14 +69,19 @@ def create_app() -> FastAPI:
         app.state.tool_registry = ToolRegistry.default_registry()
         app.state.openrouter_client = OpenRouterClient(settings)
         if settings.openbridge_state_backend == "redis":
-            app.state.state_store = RedisStateStore(settings.openbridge_redis_url)
+            app.state.state_store = RedisStateStore(
+                settings.openbridge_redis_url,
+                key_prefix=settings.openbridge_state_key_prefix,
+            )
         elif settings.openbridge_state_backend == "memory":
             app.state.state_store = MemoryStateStore()
         else:
             app.state.state_store = None
 
         if settings.openbridge_trace_backend == "redis":
-            redis_url = settings.openbridge_trace_redis_url or settings.openbridge_redis_url
+            redis_url = (
+                settings.openbridge_trace_redis_url or settings.openbridge_redis_url
+            )
             app.state.trace_store = RedisTraceStore(redis_url)
         elif settings.openbridge_trace_backend == "memory":
             app.state.trace_store = MemoryTraceStore(
@@ -116,12 +131,12 @@ def create_app() -> FastAPI:
     async def request_context_middleware(request, call_next):
         request_id = request.headers.get("x-request-id") or new_id("req")
         request.state.request_id = request_id
-        timer = RequestTimer(request.url.path, request.method)
+        timer = RequestTimer(request.method)
         logger = get_logger()
         with logger.contextualize(request_id=request_id):
             response = await call_next(request)
         response.headers["x-request-id"] = request_id
-        timer.observe(response.status_code)
+        timer.observe(response.status_code, path=_metrics_path_label(request))
         return response
 
     app.include_router(router)

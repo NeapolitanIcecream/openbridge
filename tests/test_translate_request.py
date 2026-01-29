@@ -122,7 +122,9 @@ def test_translate_request_adds_max_tokens_buffer():
     from openbridge.config import Settings
 
     settings_cls: Any = Settings
-    settings = settings_cls(OPENROUTER_API_KEY="test", OPENBRIDGE_MAX_TOKENS_BUFFER="64")
+    settings = settings_cls(
+        OPENROUTER_API_KEY="test", OPENBRIDGE_MAX_TOKENS_BUFFER="64"
+    )
     tr = translate_request(settings, req, registry, history_messages=[])
     assert tr.chat_request.max_tokens == 80
 
@@ -142,4 +144,3 @@ def test_translate_request_passthrough_reasoning_config():
     settings = settings_cls(OPENROUTER_API_KEY="test")
     tr = translate_request(settings, req, registry, history_messages=[])
     assert tr.chat_request.reasoning == {"effort": "high"}
-

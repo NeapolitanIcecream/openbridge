@@ -64,7 +64,9 @@ def _sanitize(value: Any, *, cfg: TraceSanitizeConfig, parent_key: str | None) -
     return _sanitize_string(str(value), cfg=cfg, parent_key=parent_key)
 
 
-def _sanitize_string(s: str, *, cfg: TraceSanitizeConfig, parent_key: str | None) -> Any:
+def _sanitize_string(
+    s: str, *, cfg: TraceSanitizeConfig, parent_key: str | None
+) -> Any:
     if not s:
         return s
 
@@ -80,7 +82,9 @@ def _sanitize_string(s: str, *, cfg: TraceSanitizeConfig, parent_key: str | None
         digest = hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
         return {"_redacted": True, "chars": len(s), "sha256_16": digest}
 
-    if (is_content and mode == "truncate") or (not is_content and len(s) > cfg.max_chars):
+    if (is_content and mode == "truncate") or (
+        not is_content and len(s) > cfg.max_chars
+    ):
         max_chars = max(0, int(cfg.max_chars))
         if max_chars and len(s) > max_chars:
             return s[:max_chars] + f"...[TRUNCATED {len(s) - max_chars} chars]"

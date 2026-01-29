@@ -44,7 +44,13 @@ import httpx
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
 from rich.text import Text
 
@@ -99,7 +105,10 @@ def _join_url(base_url: str, path: str) -> str:
 def _headers(client_api_key: str | None) -> dict[str, str]:
     if not client_api_key:
         return {"content-type": "application/json"}
-    return {"authorization": f"Bearer {client_api_key}", "content-type": "application/json"}
+    return {
+        "authorization": f"Bearer {client_api_key}",
+        "content-type": "application/json",
+    }
 
 
 def _http_get(
@@ -399,7 +408,11 @@ def _build_tool_output_request_builtin(
         )
     input_items.extend(
         [
-            {"type": f"{tool_type}_call_output", "call_id": call_id, "output": tool_output},
+            {
+                "type": f"{tool_type}_call_output",
+                "call_id": call_id,
+                "output": tool_output,
+            },
             {"role": "user", "content": "Continue with a normal assistant response."},
         ]
     )
@@ -488,12 +501,16 @@ def _fail(name: str, detail: str) -> ScenarioResult:
 def _get_completed_response_from_events(
     events: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    completed = next((e for e in events if e.get("event") == "response.completed"), None)
+    completed = next(
+        (e for e in events if e.get("event") == "response.completed"), None
+    )
     if not completed or not isinstance(completed.get("data"), dict):
         raise AssertionError("Missing response.completed in SSE stream")
     response = completed["data"].get("response")
     if not isinstance(response, dict):
-        raise AssertionError("Invalid response.completed payload: missing data.response")
+        raise AssertionError(
+            "Invalid response.completed payload: missing data.response"
+        )
     return response
 
 
@@ -582,7 +599,8 @@ def scenario_tool_loop_builtin(ctx: RunContext) -> ScenarioResult:
     if tool_call.type != f"{ctx.tool}_call":
         _print_response_json(f"{name} response #1 JSON", data1)
         return _fail(
-            name, f"unexpected tool call item.type: {tool_call.type!r} (expected {ctx.tool}_call)"
+            name,
+            f"unexpected tool call item.type: {tool_call.type!r} (expected {ctx.tool}_call)",
         )
 
     tool_summary = Table(title=f"{name}: detected tool call (response #1)")
@@ -596,7 +614,9 @@ def scenario_tool_loop_builtin(ctx: RunContext) -> ScenarioResult:
     if tool_call.arguments:
         try:
             parsed_args = json.loads(tool_call.arguments)
-            console.print(_panel("Parsed tool arguments (json.loads)", _pretty(parsed_args)))
+            console.print(
+                _panel("Parsed tool arguments (json.loads)", _pretty(parsed_args))
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to json.loads(tool_call.arguments): {}", exc)
 
@@ -666,13 +686,18 @@ def scenario_tool_loop_builtin(ctx: RunContext) -> ScenarioResult:
             _print_http_summary(f"{name} response #2 (stateless retry)", r2b)
             if r2b.status_code >= 400:
                 _print_response_json(f"{name} response #2b JSON", data2b)
-                return _fail(name, f"tool loop follow-up failed: HTTP {r2b.status_code}")
+                return _fail(
+                    name, f"tool loop follow-up failed: HTTP {r2b.status_code}"
+                )
             data2 = data2b
             output2 = _extract_output_items(data2)
             text = _extract_assistant_text(output2)
             if not text or not text.strip():
                 _print_response_json(f"{name} response #2b JSON", data2)
-                return _fail(name, "missing assistant message after tool output (stateless retry)")
+                return _fail(
+                    name,
+                    "missing assistant message after tool output (stateless retry)",
+                )
             return _warn(name, "state store unavailable; tool loop verified stateless")
         return _fail(name, f"tool loop follow-up failed: HTTP {r2.status_code}")
 
@@ -766,7 +791,9 @@ def scenario_multi_turn_stateful(ctx: RunContext) -> ScenarioResult:
     response_id = ctx.shared.get("multi_turn_response_id")
     nonce = ctx.shared.get("nonce")
     if not isinstance(response_id, str) or not response_id:
-        return _skip(name, "missing turn #1 response id; run multi_turn_stateless first")
+        return _skip(
+            name, "missing turn #1 response id; run multi_turn_stateless first"
+        )
     if not isinstance(nonce, str) or not nonce:
         return _skip(name, "missing nonce; run multi_turn_stateless first")
 
@@ -844,7 +871,10 @@ def scenario_stream_text(ctx: RunContext) -> ScenarioResult:
     delta_events = [e for e in events if e.get("event") == "response.output_text.delta"]
     done_events = [e for e in events if e.get("event") == "response.output_text.done"]
     if not delta_events or not done_events:
-        return _warn(name, "missing output_text delta/done events (content may be empty or provider behavior differs)")
+        return _warn(
+            name,
+            "missing output_text delta/done events (content may be empty or provider behavior differs)",
+        )
     return _ok(name, "streaming text events ok")
 
 
@@ -887,9 +917,15 @@ def scenario_stream_tool_call(ctx: RunContext) -> ScenarioResult:
         e for e in events if e.get("event") == "response.function_call_arguments.done"
     ]
     if not done_events:
-        return _warn(name, "missing function_call_arguments.done (provider/tool may not stream args)")
+        return _warn(
+            name,
+            "missing function_call_arguments.done (provider/tool may not stream args)",
+        )
     if not delta_events:
-        return _warn(name, "missing function_call_arguments.delta (provider/tool may not stream args)")
+        return _warn(
+            name,
+            "missing function_call_arguments.delta (provider/tool may not stream args)",
+        )
     return _ok(name, "streaming tool-call events ok")
 
 
@@ -956,14 +992,19 @@ def scenario_function_tool_loop(ctx: RunContext) -> ScenarioResult:
         return _fail(name, "missing function_call output item")
     if call.type != "function_call" or (call.name or "") != tool_name:
         _print_response_json(f"{name} response #1 JSON", data1)
-        return _fail(name, f"unexpected call item: type={call.type!r} name={call.name!r}")
+        return _fail(
+            name, f"unexpected call item: type={call.type!r} name={call.name!r}"
+        )
 
     parsed_args: dict[str, Any] | None = None
     try:
         parsed_args = json.loads(call.arguments or "{}")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to json.loads(function_call.arguments): {}", exc)
-    if not isinstance(parsed_args, dict) or parsed_args.get("location") != args_obj["location"]:
+    if (
+        not isinstance(parsed_args, dict)
+        or parsed_args.get("location") != args_obj["location"]
+    ):
         _print_response_json(f"{name} response #1 JSON", data1)
         return _fail(name, "function_call.arguments did not match expected args")
 
@@ -971,8 +1012,17 @@ def scenario_function_tool_loop(ctx: RunContext) -> ScenarioResult:
         "model": ctx.model,
         "instructions": "Reply with exactly 'OK' and nothing else.",
         "input": [
-            {"type": "function_call", "call_id": call.call_id, "name": tool_name, "arguments": call.arguments},
-            {"type": "function_call_output", "call_id": call.call_id, "output": {"temp": 25, "unit": "C"}},
+            {
+                "type": "function_call",
+                "call_id": call.call_id,
+                "name": tool_name,
+                "arguments": call.arguments,
+            },
+            {
+                "type": "function_call_output",
+                "call_id": call.call_id,
+                "output": {"temp": 25, "unit": "C"},
+            },
             {"role": "user", "content": "Continue with a normal assistant response."},
         ],
         "temperature": 0,
@@ -1022,7 +1072,11 @@ def scenario_allowed_tools_filter(ctx: RunContext) -> ScenarioResult:
             "Do not wrap the JSON in markdown fences."
         ),
         "tools": [{"type": "apply_patch"}, {"type": "shell"}],
-        "tool_choice": {"type": "allowed_tools", "mode": "required", "tools": [{"type": "shell"}]},
+        "tool_choice": {
+            "type": "allowed_tools",
+            "mode": "required",
+            "tools": [{"type": "shell"}],
+        },
         "temperature": 0,
         "max_output_tokens": 200,
         "stream": False,
@@ -1049,7 +1103,10 @@ def scenario_allowed_tools_filter(ctx: RunContext) -> ScenarioResult:
         return _fail(name, "missing tool call item")
     if call.type != "shell_call":
         _print_response_json(f"{name} response JSON", data)
-        return _fail(name, f"unexpected tool call item.type: {call.type!r} (expected 'shell_call')")
+        return _fail(
+            name,
+            f"unexpected tool call item.type: {call.type!r} (expected 'shell_call')",
+        )
     return _ok(name, "allowed_tools filtered tools ok")
 
 
@@ -1073,7 +1130,7 @@ def scenario_tool_name_collision_rejected(ctx: RunContext) -> ScenarioResult:
                         "additionalProperties": False,
                     },
                 },
-            }
+            },
         ],
         "tool_choice": "none",
         "temperature": 0,
@@ -1097,7 +1154,9 @@ def scenario_tool_name_collision_rejected(ctx: RunContext) -> ScenarioResult:
     detail = data.get("detail")
     if not isinstance(detail, str) or "Tool name collision" not in detail:
         _print_response_json(f"{name} response JSON", data)
-        return _warn(name, "got HTTP 400 but detail did not mention tool name collision")
+        return _warn(
+            name, "got HTTP 400 but detail did not mention tool name collision"
+        )
     return _ok(name, "tool name collision rejected")
 
 
@@ -1258,7 +1317,9 @@ def scenario_store_false(ctx: RunContext) -> ScenarioResult:
         return _skip(name, "state store disabled (HTTP 501)")
     if r_get.status_code != 404:
         _print_response_json(f"{name} GET JSON", data_get)
-        return _warn(name, f"expected 404 for store=false response, got {r_get.status_code}")
+        return _warn(
+            name, f"expected 404 for store=false response, got {r_get.status_code}"
+        )
 
     r_prev, data_prev = _responses_create(
         base_url=ctx.base_url,
@@ -1282,7 +1343,9 @@ def scenario_store_false(ctx: RunContext) -> ScenarioResult:
     if r_prev.status_code == 501:
         return _skip(name, "state store disabled (HTTP 501)")
     _print_response_json(f"{name} previous_response_id JSON", data_prev)
-    return _warn(name, f"expected 404/501 for previous_response_id, got {r_prev.status_code}")
+    return _warn(
+        name, f"expected 404/501 for previous_response_id, got {r_prev.status_code}"
+    )
 
 
 def _scenario_catalog() -> dict[str, ScenarioFn]:
@@ -1385,9 +1448,19 @@ def _main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description="Probe OpenBridge /v1/responses proxy and compatibility behaviors."
     )
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="OpenBridge base URL")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="Responses model name (OpenBridge resolves it)")
-    parser.add_argument("--tool", default=DEFAULT_TOOL, help="Built-in tool type to probe (default: apply_patch)")
+    parser.add_argument(
+        "--base-url", default=DEFAULT_BASE_URL, help="OpenBridge base URL"
+    )
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help="Responses model name (OpenBridge resolves it)",
+    )
+    parser.add_argument(
+        "--tool",
+        default=DEFAULT_TOOL,
+        help="Built-in tool type to probe (default: apply_patch)",
+    )
     parser.add_argument(
         "--suite",
         default=DEFAULT_SUITE,
@@ -1441,8 +1514,12 @@ def _main(argv: list[str]) -> int:
         action="store_true",
         help="Disable TLS verification (useful with https://127.0.0.1 and self-signed certs).",
     )
-    parser.add_argument("--print-requests", action="store_true", help="Print request JSON payloads")
-    parser.add_argument("--log-level", default="INFO", help="Loguru level (INFO/DEBUG/...)")
+    parser.add_argument(
+        "--print-requests", action="store_true", help="Print request JSON payloads"
+    )
+    parser.add_argument(
+        "--log-level", default="INFO", help="Loguru level (INFO/DEBUG/...)"
+    )
     args = parser.parse_args(argv)
 
     _setup_logging(args.log_level)
@@ -1509,4 +1586,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

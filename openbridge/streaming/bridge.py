@@ -103,7 +103,9 @@ class ResponsesStreamTranslator:
             if "tool_calls" in delta and delta["tool_calls"]:
                 events.extend(self._handle_tool_call_deltas(delta["tool_calls"]))
             if "reasoning_details" in delta and delta["reasoning_details"]:
-                events.extend(self._handle_reasoning_details(delta["reasoning_details"]))
+                events.extend(
+                    self._handle_reasoning_details(delta["reasoning_details"])
+                )
             if "reasoning" in delta and delta["reasoning"] is not None:
                 # Some providers may emit a free-form reasoning string. Preserve it for round-trip.
                 value = delta["reasoning"]

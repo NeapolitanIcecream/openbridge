@@ -171,9 +171,7 @@ def _build_user_prompt(*, tool_name: str, args_obj: dict[str, Any]) -> str:
     if tool_name == "apply_patch":
         patch_input = args_obj.get("input")
         if not isinstance(patch_input, str) or not patch_input.strip():
-            raise SystemExit(
-                "apply_patch requires args.input to be a non-empty string"
-            )
+            raise SystemExit("apply_patch requires args.input to be a non-empty string")
         return (
             "Call the tool `apply_patch` with exactly one argument object.\n"
             "The argument object MUST have exactly one key: `input`.\n"

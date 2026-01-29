@@ -232,7 +232,11 @@ def input_items_to_messages(
                     ),
                 ),
             )
-            if pending_reasoning_details and messages and messages[-1].role == "assistant":
+            if (
+                pending_reasoning_details
+                and messages
+                and messages[-1].role == "assistant"
+            ):
                 messages[-1].reasoning_details = list(pending_reasoning_details)
                 pending_reasoning_details.clear()
             continue
@@ -263,7 +267,11 @@ def input_items_to_messages(
                     ),
                 ),
             )
-            if pending_reasoning_details and messages and messages[-1].role == "assistant":
+            if (
+                pending_reasoning_details
+                and messages
+                and messages[-1].role == "assistant"
+            ):
                 messages[-1].reasoning_details = list(pending_reasoning_details)
                 pending_reasoning_details.clear()
             continue
@@ -294,7 +302,9 @@ def _normalize_message_content(content: Any) -> Any:
     """
     if isinstance(content, dict):
         part_type = str(content.get("type") or "")
-        if part_type in ("input_text", "output_text") and isinstance(content.get("text"), str):
+        if part_type in ("input_text", "output_text") and isinstance(
+            content.get("text"), str
+        ):
             return str(content["text"])
         return content
 
