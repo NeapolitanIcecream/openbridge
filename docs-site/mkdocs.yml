@@ -1,0 +1,8 @@
+site_name: OpenBridge
+
+theme:
+  name: material
+
+nav:
+  - Home: index.md
+  - Logging: logging.md
