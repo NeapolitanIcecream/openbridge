@@ -202,6 +202,7 @@ def input_items_to_messages(
             content = item.content
             if not isinstance(content, (str, list, dict)):
                 content = json_dumps(content)
+            content = _normalize_message_content(content)
             msg = ChatMessage(role=item.role, content=content)
             if msg.role == "assistant" and pending_reasoning_details:
                 msg.reasoning_details = list(pending_reasoning_details)
@@ -278,6 +279,50 @@ def input_items_to_messages(
             continue
 
     return messages
+
+
+def _normalize_message_content(content: Any) -> Any:
+    """
+    Normalize Responses message `content` into a Chat Completions-friendly shape.
+
+    Codex (Responses API) commonly uses content parts like:
+      [{"type": "input_text", "text": "..."}]
+
+    Many chat-completions-compatible upstreams expect either a plain string, or
+    content parts with type="text". To improve compatibility, convert pure text
+    parts into a string, and rewrite input/output text part types when mixed.
+    """
+    if isinstance(content, dict):
+        part_type = str(content.get("type") or "")
+        if part_type in ("input_text", "output_text") and isinstance(content.get("text"), str):
+            return str(content["text"])
+        return content
+
+    if isinstance(content, list):
+        text_segments: list[str] = []
+        converted: list[Any] = []
+        all_text_parts = True
+        for part in content:
+            if not isinstance(part, dict):
+                all_text_parts = False
+                converted.append(part)
+                continue
+            part_type = str(part.get("type") or "")
+            if part_type in ("input_text", "output_text", "text") and isinstance(
+                part.get("text"), str
+            ):
+                text = str(part["text"])
+                text_segments.append(text)
+                converted.append({"type": "text", "text": text})
+                continue
+            all_text_parts = False
+            converted.append(part)
+
+        if text_segments and all_text_parts:
+            return "".join(text_segments)
+        return converted
+
+    return content
 
 
 def infer_tools_from_input_items(

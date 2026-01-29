@@ -84,6 +84,52 @@ def test_streaming_tool_call_events():
     assert delta_payload["delta"] == '{"patch":"x"}'
 
 
+def test_streaming_ignores_empty_text_delta():
+    tool_map = ToolVirtualizationResult(
+        chat_tools=[],
+        function_name_map={"ob_apply_patch": "apply_patch"},
+        external_name_map={"apply_patch": "ob_apply_patch"},
+    )
+    translator = ResponsesStreamTranslator(
+        response_id="resp_4",
+        model="openai/gpt-4.1",
+        created_at=1,
+        tool_map=tool_map,
+    )
+
+    events = []
+    events += translator.start_events()
+    # Some upstreams emit an empty-string content delta even when the assistant is tool-calling.
+    events += translator.process_chunk({"choices": [{"delta": {"content": ""}}]})
+    events += translator.process_chunk(
+        {
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "ob_apply_patch",
+                                    "arguments": '{"patch":"x"}',
+                                },
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    )
+    events += translator.finish_events()
+
+    # No text events should be produced for empty-string deltas.
+    assert not [e for e in events if e["event"].startswith("response.output_text.")]
+    final = translator.final_response()
+    assert not [item for item in final.output if item.type == "message"]
+
+
 def test_streaming_tool_call_id_late():
     tool_map = ToolVirtualizationResult(
         chat_tools=[],

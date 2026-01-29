@@ -237,6 +237,10 @@ class ResponsesStreamTranslator:
 
     def _handle_text_delta(self, delta: str) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
+        if delta == "":
+            # Avoid creating empty text output items from upstreams that emit
+            # empty string deltas alongside tool calls.
+            return events
         if self._text_output_index is None:
             item = ResponseOutputItem(
                 id=new_id("item"),

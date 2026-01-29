@@ -71,6 +71,42 @@ def test_input_items_to_messages_preserves_openrouter_reasoning_details():
     assert messages[1].reasoning_details[0]["id"] == "reasoning-summary-1"
 
 
+def test_input_items_to_messages_normalizes_text_content_parts():
+    registry = ToolRegistry.default_registry()
+    items = [
+        InputItem.model_validate(
+            {
+                "type": "message",
+                "role": "developer",
+                "content": [{"type": "input_text", "text": "dev"}],
+            }
+        ),
+        InputItem.model_validate(
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "hi"}],
+            }
+        ),
+        InputItem.model_validate(
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "ok"}],
+            }
+        ),
+    ]
+
+    messages = input_items_to_messages(items, tool_registry=registry)
+
+    assert messages[0].role == "developer"
+    assert messages[0].content == "dev"
+    assert messages[1].role == "user"
+    assert messages[1].content == "hi"
+    assert messages[2].role == "assistant"
+    assert messages[2].content == "ok"
+
+
 def test_translate_request_adds_max_tokens_buffer():
     registry = ToolRegistry.default_registry()
     req = ResponsesCreateRequest.model_validate(
