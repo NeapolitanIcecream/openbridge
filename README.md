@@ -1,5 +1,7 @@
 # OpenBridge
 
+![tested on codex-cli 0.92.0](https://img.shields.io/badge/tested%20on-codex--cli%200.92.0-brightgreen)
+
 OpenBridge is a lightweight HTTP bridge that lets clients built for the
 OpenAI **Responses API** (`POST /v1/responses`) run on top of OpenRouter's
 **Chat Completions API**.
