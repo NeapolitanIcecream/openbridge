@@ -305,7 +305,10 @@ def _default_base_url() -> str:
     return f"http://{host}:{port}"
 
 
-@app.command("debug")
+@app.command(
+    "debug",
+    help="Fetch and render a captured debug bundle (req_* or resp_*).",
+)
 def debug(
     trace_id: Annotated[
         str,
@@ -352,6 +355,7 @@ def debug(
         ),
     ] = False,
 ) -> None:
+    """Fetch and render a captured debug bundle from a running OpenBridge instance."""
     base_url = (base_url or _default_base_url()).rstrip("/")
     kind_norm = (kind or "auto").strip().lower()
     if kind_norm == "auto":

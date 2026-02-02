@@ -111,4 +111,16 @@ uv run openbridge debug resp_...
 uv run openbridge debug req_... --raw -o ./bundle.json
 ```
 
+Notes:
+
+- **IDs**: use a `resp_*` id (the Responses `id` returned by `POST /v1/responses`) or a
+  `req_*` id (the `X-Request-Id` response header).
+- **Remote server**: use `--base-url http://host:port` to point the CLI at a different
+  OpenBridge instance.
+- **Protected debug endpoints**: if `OPENBRIDGE_CLIENT_API_KEY` is set on the server,
+  pass `--api-key ...` (or set `OPENBRIDGE_CLIENT_API_KEY` in your environment) so the CLI
+  can send `Authorization: Bearer ...`.
+- **Explicit kind**: if your id does not start with `req_` or `resp_`, use `--kind request|response`.
+- **Raw / export**: `--raw` prints plain JSON, and `--output/-o` writes the bundle to a file.
+
 Debug endpoints are disabled by default and should not be enabled on untrusted networks.
