@@ -46,7 +46,9 @@ def test_chat_response_with_text_only():
     assert responses.output[0].content is not None
     assert responses.output[0].content[0].text == "Hello, world!"
     assert responses.usage is not None
-    assert responses.usage["prompt_tokens"] == 10
+    assert responses.usage["input_tokens"] == 10
+    assert responses.usage["output_tokens"] == 5
+    assert responses.usage["total_tokens"] == 15
 
 
 def test_chat_response_with_reasoning_details():

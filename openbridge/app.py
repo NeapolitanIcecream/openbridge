@@ -173,7 +173,7 @@ def create_app() -> FastAPI:
                     if upstream_id
                     else logger
                 )
-                summary_logger.info(line)
+                summary_logger.info("{}", line)
         response.headers["x-request-id"] = request_id
         timer.observe(response.status_code, path=_metrics_path_label(request))
         return response

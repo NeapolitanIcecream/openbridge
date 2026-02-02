@@ -168,6 +168,7 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
     state_store = request.app.state.state_store
     trace_store = getattr(request.app.state, "trace_store", None)
     request_id = getattr(request.state, "request_id", None) or new_id("req")
+    req_logger = logger.bind(request_id=request_id)
     started_at = time.perf_counter()
     request_source = request.headers.get("x-openbridge-source") or request.headers.get(
         "user-agent"
@@ -269,7 +270,7 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
             if upstream_id:
                 stream_upstream_request_id = upstream_id
                 request.state.openbridge_upstream_request_id = upstream_id
-                logger.bind(upstream_request_id=upstream_id).info(
+                req_logger.bind(upstream_request_id=upstream_id).info(
                     "OpenRouter SSE connected"
                 )
             if trace_store is None or trace_record is None:
@@ -348,59 +349,56 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
         )
 
         async def event_stream():
-            # The request middleware's logger context does not cover streaming iteration.
-            # Re-apply request_id here so logs and traces stay correlated.
-            with logger.contextualize(request_id=request_id):
-                cancelled = False
-                completed = False
-                failed = False
-                try:
-                    async for event in raw_stream:
-                        event_name = event.get("event")
-                        if event_name == "response.completed":
-                            completed = True
-                        elif event_name == "response.failed":
-                            failed = True
-                        yield event
-                except asyncio.CancelledError:
-                    cancelled = True
+            cancelled = False
+            completed = False
+            failed = False
+            try:
+                async for event in raw_stream:
+                    event_name = event.get("event")
+                    if event_name == "response.completed":
+                        completed = True
+                    elif event_name == "response.failed":
+                        failed = True
+                    yield event
+            except asyncio.CancelledError:
+                cancelled = True
+                duration_s = time.perf_counter() - started_at
+                line = format_request_summary_line(
+                    duration_s=duration_s,
+                    model=chat_request.model,
+                    source=request_source,
+                    usage=stream_usage,
+                    finish_reason=stream_finish_reason or "cancelled",
+                )
+                summary_logger = (
+                    req_logger.bind(upstream_request_id=stream_upstream_request_id)
+                    if stream_upstream_request_id
+                    else req_logger
+                )
+                summary_logger.info("{}", line)
+                return
+            finally:
+                if not cancelled:
                     duration_s = time.perf_counter() - started_at
+                    finish_reason = stream_finish_reason
+                    if finish_reason is None:
+                        if failed:
+                            finish_reason = "error"
+                        elif completed:
+                            finish_reason = "stop"
                     line = format_request_summary_line(
                         duration_s=duration_s,
                         model=chat_request.model,
                         source=request_source,
                         usage=stream_usage,
-                        finish_reason=stream_finish_reason or "cancelled",
+                        finish_reason=finish_reason,
                     )
                     summary_logger = (
-                        logger.bind(upstream_request_id=stream_upstream_request_id)
+                        req_logger.bind(upstream_request_id=stream_upstream_request_id)
                         if stream_upstream_request_id
-                        else logger
+                        else req_logger
                     )
-                    summary_logger.info(line)
-                    raise
-                finally:
-                    if not cancelled:
-                        duration_s = time.perf_counter() - started_at
-                        finish_reason = stream_finish_reason
-                        if finish_reason is None:
-                            if failed:
-                                finish_reason = "error"
-                            elif completed:
-                                finish_reason = "stop"
-                        line = format_request_summary_line(
-                            duration_s=duration_s,
-                            model=chat_request.model,
-                            source=request_source,
-                            usage=stream_usage,
-                            finish_reason=finish_reason,
-                        )
-                        summary_logger = (
-                            logger.bind(upstream_request_id=stream_upstream_request_id)
-                            if stream_upstream_request_id
-                            else logger
-                        )
-                        summary_logger.info(line)
+                    summary_logger.info("{}", line)
 
         return EventSourceResponse(event_stream())
 

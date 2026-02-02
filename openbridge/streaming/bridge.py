@@ -43,6 +43,7 @@ from openbridge.models.responses import (
 )
 from openbridge.services import apply_degrade_fields, extract_error_message
 from openbridge.tools.registry import ToolVirtualizationResult
+from openbridge.usage import normalize_responses_usage
 from openbridge.utils import json_dumps, new_id
 
 
@@ -569,11 +570,14 @@ async def stream_responses_events(
                             chunk = json.loads(sse.data)
                             if isinstance(chunk, dict):
                                 if isinstance(chunk.get("usage"), dict):
-                                    last_usage = dict(chunk["usage"])
-                                    translator.set_usage(last_usage)
+                                    raw_usage = dict(chunk["usage"])
+                                    last_usage = raw_usage
+                                    translator.set_usage(
+                                        normalize_responses_usage(raw_usage)
+                                    )
                                     if on_upstream_stats is not None:
                                         await on_upstream_stats(
-                                            last_usage, finish_reason
+                                            raw_usage, finish_reason
                                         )
 
                                 choices = chunk.get("choices")

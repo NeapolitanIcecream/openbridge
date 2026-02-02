@@ -9,6 +9,7 @@ from openbridge.models.responses import (
     ResponsesCreateResponse,
 )
 from openbridge.tools.registry import ToolVirtualizationResult
+from openbridge.usage import normalize_responses_usage
 from openbridge.utils import new_id, now_ts
 
 
@@ -46,7 +47,7 @@ def chat_response_to_responses(
         created_at=created_at,
         model=model,
         output=output,
-        usage=chat_response.usage,
+        usage=normalize_responses_usage(chat_response.usage),
     )
 
 
