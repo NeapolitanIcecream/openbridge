@@ -455,9 +455,7 @@ async def stream_responses_events(
     created_at: int,
     settings: Settings,
     on_upstream_request_id: Callable[[str | None], Awaitable[None]] | None = None,
-    on_upstream_stats: Callable[
-        [dict[str, Any] | None, str | None], Awaitable[None]
-    ]
+    on_upstream_stats: Callable[[dict[str, Any] | None, str | None], Awaitable[None]]
     | None = None,
     on_complete: Callable[
         [ResponsesCreateResponse, ChatMessage | None], Awaitable[None]

@@ -146,9 +146,9 @@ def create_app() -> FastAPI:
             )
             if should_log_summary:
                 duration_s = time.perf_counter() - started_at
-                source = request.headers.get("x-openbridge-source") or request.headers.get(
-                    "user-agent"
-                )
+                source = request.headers.get(
+                    "x-openbridge-source"
+                ) or request.headers.get("user-agent")
                 if not source and request.client is not None:
                     source = request.client.host
 

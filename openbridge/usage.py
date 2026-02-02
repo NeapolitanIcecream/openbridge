@@ -58,4 +58,3 @@ def normalize_responses_usage(usage: dict[str, Any] | None) -> dict[str, Any] | 
             normalized["output_tokens_details"] = {"reasoning_tokens": reasoning_tokens}
 
     return normalized or None
-
