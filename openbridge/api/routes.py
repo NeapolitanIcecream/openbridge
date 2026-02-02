@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any
 
 import httpx
@@ -13,6 +15,7 @@ from openbridge.metrics import metrics_response
 from openbridge.models.chat import ChatCompletionResponse
 from openbridge.models.errors import ErrorDetail, ErrorResponse
 from openbridge.models.responses import ResponsesCreateRequest, ResponsesCreateResponse
+from openbridge.request_summary import format_request_summary_line
 from openbridge.state import StoredResponse
 from openbridge.trace import TraceRecord, TraceSanitizeConfig, sanitize_trace_value
 from openbridge.services import (
@@ -165,6 +168,14 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
     state_store = request.app.state.state_store
     trace_store = getattr(request.app.state, "trace_store", None)
     request_id = getattr(request.state, "request_id", None) or new_id("req")
+    started_at = time.perf_counter()
+    request_source = request.headers.get("x-openbridge-source") or request.headers.get(
+        "user-agent"
+    )
+    if not request_source and request.client is not None:
+        request_source = request.client.host
+    request.state.openbridge_is_streaming = bool(payload.stream)
+    request.state.openbridge_model = payload.model
 
     trace_cfg = TraceSanitizeConfig(
         content_mode=settings.openbridge_trace_content,
@@ -210,6 +221,7 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     chat_request = translation.chat_request
     tool_map = translation.tool_map
+    request.state.openbridge_model = chat_request.model
 
     response_id = new_id("resp")
     created_at = now_ts()
@@ -248,8 +260,15 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
     if payload.stream:
         from openbridge.streaming.bridge import stream_responses_events
 
+        stream_usage: dict[str, Any] | None = None
+        stream_finish_reason: str | None = None
+        stream_upstream_request_id: str | None = None
+
         async def on_upstream_request_id(upstream_id: str | None) -> None:
+            nonlocal stream_upstream_request_id
             if upstream_id:
+                stream_upstream_request_id = upstream_id
+                request.state.openbridge_upstream_request_id = upstream_id
                 logger.bind(upstream_request_id=upstream_id).info(
                     "OpenRouter SSE connected"
                 )
@@ -260,6 +279,17 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
             if upstream_id:
                 trace_record.upstream["upstream_request_id"] = upstream_id
             await trace_store.set(trace_record, settings.openbridge_trace_ttl_seconds)
+
+        async def on_upstream_stats(
+            usage: dict[str, Any] | None, finish_reason: str | None
+        ) -> None:
+            nonlocal stream_usage, stream_finish_reason
+            if isinstance(usage, dict):
+                stream_usage = usage
+                request.state.openbridge_usage = usage
+            if isinstance(finish_reason, str) and finish_reason:
+                stream_finish_reason = finish_reason
+                request.state.openbridge_finish_reason = finish_reason
 
         async def on_complete(final_response, assistant_message):
             if state_store is None or payload.store is False:
@@ -313,6 +343,7 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
             created_at=created_at,
             settings=settings,
             on_upstream_request_id=on_upstream_request_id,
+            on_upstream_stats=on_upstream_stats,
             on_complete=on_complete,
         )
 
@@ -320,8 +351,56 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
             # The request middleware's logger context does not cover streaming iteration.
             # Re-apply request_id here so logs and traces stay correlated.
             with logger.contextualize(request_id=request_id):
-                async for event in raw_stream:
-                    yield event
+                cancelled = False
+                completed = False
+                failed = False
+                try:
+                    async for event in raw_stream:
+                        event_name = event.get("event")
+                        if event_name == "response.completed":
+                            completed = True
+                        elif event_name == "response.failed":
+                            failed = True
+                        yield event
+                except asyncio.CancelledError:
+                    cancelled = True
+                    duration_s = time.perf_counter() - started_at
+                    line = format_request_summary_line(
+                        duration_s=duration_s,
+                        model=chat_request.model,
+                        source=request_source,
+                        usage=stream_usage,
+                        finish_reason=stream_finish_reason or "cancelled",
+                    )
+                    summary_logger = (
+                        logger.bind(upstream_request_id=stream_upstream_request_id)
+                        if stream_upstream_request_id
+                        else logger
+                    )
+                    summary_logger.info(line)
+                    raise
+                finally:
+                    if not cancelled:
+                        duration_s = time.perf_counter() - started_at
+                        finish_reason = stream_finish_reason
+                        if finish_reason is None:
+                            if failed:
+                                finish_reason = "error"
+                            elif completed:
+                                finish_reason = "stop"
+                        line = format_request_summary_line(
+                            duration_s=duration_s,
+                            model=chat_request.model,
+                            source=request_source,
+                            usage=stream_usage,
+                            finish_reason=finish_reason,
+                        )
+                        summary_logger = (
+                            logger.bind(upstream_request_id=stream_upstream_request_id)
+                            if stream_upstream_request_id
+                            else logger
+                        )
+                        summary_logger.info(line)
 
         return EventSourceResponse(event_stream())
 
@@ -347,6 +426,8 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
     upstream_payload: dict[str, Any] = chat_request.model_dump(exclude_none=True)
     upstream_response = await _call_upstream(upstream_payload)
     upstream_request_id = upstream_response.headers.get("x-request-id")
+    if upstream_request_id:
+        request.state.openbridge_upstream_request_id = upstream_request_id
     if trace_store is not None and trace_record is not None:
         trace_record.updated_at = now_ts()
         trace_record.upstream = trace_record.upstream or {}
@@ -408,6 +489,8 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
             await trace_store.set(trace_record, settings.openbridge_trace_ttl_seconds)
 
         if upstream_response2.status_code >= 400:
+            if upstream_request_id2:
+                request.state.openbridge_upstream_request_id = upstream_request_id2
             return _upstream_error_response(upstream_response2)
         if upstream_request_id2:
             logger.bind(upstream_request_id=upstream_request_id2).info(
@@ -418,11 +501,18 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
             upstream_response = upstream_response2
             chat_response = chat_response2
             responses = responses2
+            if upstream_request_id2:
+                request.state.openbridge_upstream_request_id = upstream_request_id2
         else:
             raise HTTPException(
                 status_code=502, detail="Upstream returned empty completion"
             )
 
+    request.state.openbridge_usage = chat_response.usage
+    finish_reason = (
+        chat_response.choices[0].finish_reason if chat_response.choices else None
+    )
+    request.state.openbridge_finish_reason = finish_reason
     assistant_message = (
         chat_response.choices[0].message if chat_response.choices else None
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -13,6 +14,7 @@ from openbridge.config import load_settings
 from openbridge.logging import get_logger, setup_logging
 from openbridge.metrics import RequestTimer
 from openbridge.models.errors import ErrorDetail, ErrorResponse
+from openbridge.request_summary import format_request_summary_line
 from openbridge.state import MemoryStateStore, RedisStateStore
 from openbridge.trace import MemoryTraceStore, RedisTraceStore
 from openbridge.tools import ToolRegistry
@@ -133,8 +135,45 @@ def create_app() -> FastAPI:
         request.state.request_id = request_id
         timer = RequestTimer(request.method)
         logger = get_logger()
+        started_at = time.perf_counter()
         with logger.contextualize(request_id=request_id):
             response = await call_next(request)
+
+            should_log_summary = (
+                request.method == "POST"
+                and str(request.url.path) == "/v1/responses"
+                and not bool(getattr(request.state, "openbridge_is_streaming", False))
+            )
+            if should_log_summary:
+                duration_s = time.perf_counter() - started_at
+                source = request.headers.get("x-openbridge-source") or request.headers.get(
+                    "user-agent"
+                )
+                if not source and request.client is not None:
+                    source = request.client.host
+
+                model = getattr(request.state, "openbridge_model", None)
+                usage = getattr(request.state, "openbridge_usage", None)
+                finish_reason = getattr(request.state, "openbridge_finish_reason", None)
+                if finish_reason is None and response.status_code >= 400:
+                    finish_reason = "error"
+
+                line = format_request_summary_line(
+                    duration_s=duration_s,
+                    model=model,
+                    source=source,
+                    usage=usage if isinstance(usage, dict) else None,
+                    finish_reason=finish_reason,
+                )
+                upstream_id = getattr(
+                    request.state, "openbridge_upstream_request_id", None
+                )
+                summary_logger = (
+                    logger.bind(upstream_request_id=upstream_id)
+                    if upstream_id
+                    else logger
+                )
+                summary_logger.info(line)
         response.headers["x-request-id"] = request_id
         timer.observe(response.status_code, path=_metrics_path_label(request))
         return response

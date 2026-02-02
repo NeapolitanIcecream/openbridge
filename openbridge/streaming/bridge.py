@@ -84,6 +84,12 @@ class ResponsesStreamTranslator:
         self._reasoning_detail_order: list[str] = []
         self._reasoning_detail_map: dict[str, dict[str, Any]] = {}
         self._assistant_reasoning: str | None = None
+        self._usage: dict[str, Any] | None = None
+
+    def set_usage(self, usage: dict[str, Any] | None) -> None:
+        if not isinstance(usage, dict):
+            return
+        self._usage = usage
 
     def start_events(self) -> list[dict[str, Any]]:
         response = self._build_response()
@@ -435,6 +441,7 @@ class ResponsesStreamTranslator:
             created_at=self._created_at,
             model=self._model,
             output=list(self._output_items),
+            usage=self._usage,
         )
 
 
@@ -447,6 +454,10 @@ async def stream_responses_events(
     created_at: int,
     settings: Settings,
     on_upstream_request_id: Callable[[str | None], Awaitable[None]] | None = None,
+    on_upstream_stats: Callable[
+        [dict[str, Any] | None, str | None], Awaitable[None]
+    ]
+    | None = None,
     on_complete: Callable[
         [ResponsesCreateResponse, ChatMessage | None], Awaitable[None]
     ]
@@ -460,6 +471,8 @@ async def stream_responses_events(
         tool_map=tool_map,
     )
     started = False
+    finish_reason: str | None = None
+    last_usage: dict[str, Any] | None = None
 
     class StreamRetryableError(Exception):
         pass
@@ -554,6 +567,46 @@ async def stream_responses_events(
                             if sse.data == "[DONE]":
                                 break
                             chunk = json.loads(sse.data)
+                            if isinstance(chunk, dict):
+                                if isinstance(chunk.get("usage"), dict):
+                                    last_usage = dict(chunk["usage"])
+                                    translator.set_usage(last_usage)
+                                    if on_upstream_stats is not None:
+                                        await on_upstream_stats(
+                                            last_usage, finish_reason
+                                        )
+
+                                choices = chunk.get("choices")
+                                if isinstance(choices, list):
+                                    for choice in choices:
+                                        if not isinstance(choice, dict):
+                                            continue
+                                        fr = choice.get("finish_reason")
+                                        if isinstance(fr, str) and fr:
+                                            finish_reason = fr
+                                            if on_upstream_stats is not None:
+                                                await on_upstream_stats(
+                                                    last_usage, finish_reason
+                                                )
+
+                                # OpenRouter can send mid-stream errors as a final chunk with
+                                # finish_reason="error" and a top-level `error` object.
+                                if isinstance(chunk.get("error"), dict):
+                                    error_obj = chunk["error"]
+                                    error_message = error_obj.get("message") or str(
+                                        error_obj
+                                    )
+                                    if not started:
+                                        for event in translator.start_events():
+                                            started = True
+                                            yield event
+                                    yield translator.failure_event(
+                                        {
+                                            "message": str(error_message),
+                                            "type": "upstream_error",
+                                        }
+                                    )
+                                    return
                             for event in translator.process_chunk(chunk):
                                 yield event
                     break

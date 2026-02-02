@@ -19,6 +19,27 @@ This makes it easy to correlate:
 - client request ↔ OpenBridge logs (`request_id`)
 - OpenBridge request ↔ OpenRouter support logs (`upstream_request_id`)
 
+## Request summary logs (usage, cost, throughput)
+
+OpenBridge emits a single **request summary** line for every completed or interrupted
+`POST /v1/responses` request (both non-streaming and streaming).
+
+The summary is logged as an `INFO` message starting with `REQ` and includes:
+
+- duration
+- model
+- request source (`X-OpenBridge-Source` header, or `User-Agent` as fallback)
+- input / output tokens
+- cost (OpenRouter credits)
+- throughput (tokens/s)
+- finish reason (e.g. `stop`, `tool_calls`, `error`, `cancelled`)
+
+Example:
+
+```text
+... | INFO     | req_... | or_... | REQ   842ms | model=openai/gpt-4.1 | src=codex-cli/0.92.0 | in=194 out=2 | cost=0.9500cr | tps=232.8 | finish=stop
+```
+
 ## Log level
 
 Configure the log level via environment variables:
