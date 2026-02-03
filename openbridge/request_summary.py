@@ -11,6 +11,16 @@ class UsageSummary:
     completion_tokens: int | None
     total_tokens: int | None
     cost: float | None
+    cached_tokens: int | None
+    reasoning_tokens: int | None
+
+    def input_tokens_excluding_cached(self) -> int | None:
+        """Return input tokens excluding cached tokens when available."""
+        if self.prompt_tokens is None:
+            return None
+        if self.cached_tokens is None:
+            return self.prompt_tokens
+        return max(0, self.prompt_tokens - self.cached_tokens)
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -39,6 +49,8 @@ def parse_usage(usage: dict[str, Any] | None) -> UsageSummary:
             completion_tokens=None,
             total_tokens=None,
             cost=None,
+            cached_tokens=None,
+            reasoning_tokens=None,
         )
 
     prompt_raw = usage.get("prompt_tokens")
@@ -52,16 +64,52 @@ def parse_usage(usage: dict[str, Any] | None) -> UsageSummary:
     completion = _int_or_none(completion_raw)
     total = _int_or_none(usage.get("total_tokens"))
     cost = _float_or_none(usage.get("cost"))
+
+    cached_tokens: int | None = None
+    input_details = usage.get("input_tokens_details")
+    if not isinstance(input_details, dict):
+        input_details = usage.get("prompt_tokens_details")
+    if isinstance(input_details, dict):
+        cached_tokens = _int_or_none(input_details.get("cached_tokens"))
+
+    reasoning_tokens: int | None = None
+    output_details = usage.get("output_tokens_details")
+    if not isinstance(output_details, dict):
+        output_details = usage.get("completion_tokens_details")
+    if isinstance(output_details, dict):
+        reasoning_tokens = _int_or_none(output_details.get("reasoning_tokens"))
+
     return UsageSummary(
         prompt_tokens=prompt,
         completion_tokens=completion,
         total_tokens=total,
         cost=cost,
+        cached_tokens=cached_tokens,
+        reasoning_tokens=reasoning_tokens,
     )
 
 
 def _fmt_int(value: int | None) -> str:
-    return "-" if value is None else str(value)
+    return "-" if value is None else f"{value:,}"
+
+
+def _fmt_input_tokens(*, prompt_tokens: int | None, cached_tokens: int | None) -> str:
+    if prompt_tokens is None:
+        return "-"
+    if cached_tokens is None or cached_tokens <= 0:
+        return f"{prompt_tokens:,}"
+    uncached = max(0, prompt_tokens - cached_tokens)
+    return f"{uncached:,} (+ {cached_tokens:,} cached)"
+
+
+def _fmt_output_tokens(
+    *, completion_tokens: int | None, reasoning_tokens: int | None
+) -> str:
+    if completion_tokens is None:
+        return "-"
+    if reasoning_tokens is None or reasoning_tokens <= 0:
+        return f"{completion_tokens:,}"
+    return f"{completion_tokens:,} (reasoning {reasoning_tokens:,})"
 
 
 def _fmt_cost(cost: float | None) -> str:
@@ -92,22 +140,26 @@ def format_request_summary_line(
 ) -> str:
     """Format a single-line request summary for console logs."""
     usage_summary = parse_usage(usage)
-    prompt = usage_summary.prompt_tokens
-    completion = usage_summary.completion_tokens
+    prompt_total = usage_summary.prompt_tokens
+    completion_total = usage_summary.completion_tokens
     total = usage_summary.total_tokens
-    if total is None and prompt is not None and completion is not None:
-        total = prompt + completion
+
+    prompt_excl_cached = usage_summary.input_tokens_excluding_cached()
+    total_for_tps = total
+    if prompt_excl_cached is not None and completion_total is not None:
+        total_for_tps = prompt_excl_cached + completion_total
     tps = None
-    if total is not None and duration_s > 0:
-        tps = float(total) / float(duration_s)
+    if total_for_tps is not None and duration_s > 0:
+        tps = float(total_for_tps) / float(duration_s)
 
     duration_ms = int(duration_s * 1000)
     return (
         f"REQ {duration_ms:>6}ms"
         f" | model={_short(model, width=40)}"
-        f" | src={_short(source, width=40)}"
-        f" | in={_fmt_int(prompt)} out={_fmt_int(completion)}"
+        f" | input={_fmt_input_tokens(prompt_tokens=prompt_total, cached_tokens=usage_summary.cached_tokens)}"
+        f" | output={_fmt_output_tokens(completion_tokens=completion_total, reasoning_tokens=usage_summary.reasoning_tokens)}"
         f" | cost={_fmt_cost(usage_summary.cost)}"
         f" | tps={_fmt_tps(tps)}"
         f" | finish={finish_reason or '-'}"
+        f" | src={_short(source, width=40)}"
     )

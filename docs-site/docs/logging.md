@@ -14,6 +14,12 @@ YYYY-MM-DD HH:mm:ss | LEVEL    | <request_id> | <upstream_request_id> | message
   OpenBridge always returns it in the response header `X-Request-Id`.
 - **upstream_request_id**: the upstream `x-request-id` returned by OpenRouter (when available).
 
+Notes:
+
+- Console logs compact long IDs (e.g. `req_...`) to keep lines readable and aligned.
+- Lines are truncated to the current terminal width (with an ellipsis) to avoid wrapping.
+  Use `OPENBRIDGE_LOG_FILE` if you need the full, untruncated IDs and messages.
+
 This makes it easy to correlate:
 
 - client request ↔ OpenBridge logs (`request_id`)
@@ -29,7 +35,7 @@ The summary is logged as an `INFO` message starting with `REQ` and includes:
 - duration
 - model
 - request source (`X-OpenBridge-Source` header, or `User-Agent` as fallback)
-- input / output tokens
+- input / output tokens (with cached / reasoning breakdowns when available)
 - cost (OpenRouter credits)
 - throughput (tokens/s)
 - finish reason (e.g. `stop`, `tool_calls`, `error`, `cancelled`)
@@ -37,7 +43,7 @@ The summary is logged as an `INFO` message starting with `REQ` and includes:
 Example:
 
 ```text
-... | INFO     | req_... | or_... | REQ   842ms | model=openai/gpt-4.1 | src=codex-cli/0.92.0 | in=194 out=2 | cost=0.9500cr | tps=232.8 | finish=stop
+... | INFO     | req_... | or_... | REQ   842ms | model=openai/gpt-4.1 | input=194 | output=2 | cost=0.9500cr | tps=232.8 | finish=stop | src=codex-cli/0.92.0
 ```
 
 ## Log level
