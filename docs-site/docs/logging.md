@@ -7,12 +7,11 @@ OpenBridge uses **loguru** for logs and **Rich** for console rendering.
 By default, logs are printed to stdout with the following columns:
 
 ```text
-YYYY-MM-DD HH:mm:ss | LEVEL    | <request_id> | <upstream_request_id> | message
+YYYY-MM-DD HH:mm:ss | LEVEL    | <request_id> | message
 ```
 
 - **request_id**: extracted from the incoming `X-Request-Id` header, or generated automatically.
   OpenBridge always returns it in the response header `X-Request-Id`.
-- **upstream_request_id**: the upstream `x-request-id` returned by OpenRouter (when available).
 
 Notes:
 
@@ -23,7 +22,6 @@ Notes:
 This makes it easy to correlate:
 
 - client request ↔ OpenBridge logs (`request_id`)
-- OpenBridge request ↔ OpenRouter support logs (`upstream_request_id`)
 
 ## Request summary logs (usage, cost, throughput)
 

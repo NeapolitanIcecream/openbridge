@@ -49,16 +49,13 @@ def setup_logging(level: str, *, log_file: str | None = None) -> None:
         timestamp = record["time"].strftime("%Y-%m-%d %H:%M:%S")
         level_name = record["level"].name
         request_id = _compact_id(record["extra"].get("request_id", "-"))
-        upstream_id = _compact_id(record["extra"].get("upstream_request_id", "-"))
 
-        text = Text(justify="left", overflow="ellipsis", no_wrap=True)
+        text = Text(justify="left")
         text.append(timestamp, style="dim")
         text.append(" | ", style="dim")
         text.append(f"{level_name:<8}", style=_level_style(level_name))
         text.append(" | ", style="dim")
         text.append(f"{request_id:<18}", style="cyan")
-        text.append(" | ", style="dim")
-        text.append(f"{upstream_id:<18}", style="magenta")
         text.append(" | ", style="dim")
 
         msg = Text(str(record["message"]))
@@ -66,10 +63,13 @@ def setup_logging(level: str, *, log_file: str | None = None) -> None:
             msg.stylize("bold cyan", 0, 3)
         text.append(msg)
         if record["exception"]:
-            text.no_wrap = False
-            text.overflow = "fold"
             text.append(f"\n{record['exception']}")
-        console.print(text)
+            console.print(text, overflow="fold", no_wrap=False)
+            return
+
+        # NOTE: Text.no_wrap / Text.overflow doesn't control wrapping when printing Text
+        # directly. Pass these options to Console.print to avoid terminal auto-wrapping.
+        console.print(text, overflow="ellipsis", no_wrap=True)
 
     logger.add(_sink, level=level, backtrace=False, diagnose=False)
     if log_file:
