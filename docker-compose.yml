@@ -1,0 +1,33 @@
+services:
+  openbridge:
+    build:
+      context: .
+    image: openbridge:local
+    ports:
+      - "8000:8000"
+    environment:
+      # Required: set this in your shell or in a local .env file (Compose reads it automatically).
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY in your shell or .env file}
+
+      # Bind inside the container.
+      OPENBRIDGE_HOST: "0.0.0.0"
+      OPENBRIDGE_PORT: "8000"
+
+      # Optional: enable Redis-backed state/trace (requires `--profile redis`).
+      OPENBRIDGE_STATE_BACKEND: ${OPENBRIDGE_STATE_BACKEND:-memory}
+      OPENBRIDGE_TRACE_BACKEND: ${OPENBRIDGE_TRACE_BACKEND:-memory}
+      OPENBRIDGE_REDIS_URL: ${OPENBRIDGE_REDIS_URL:-redis://redis:6379/0}
+      OPENBRIDGE_TRACE_REDIS_URL: ${OPENBRIDGE_TRACE_REDIS_URL:-redis://redis:6379/0}
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    profiles:
+      - redis
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+
+volumes:
+  redis-data:

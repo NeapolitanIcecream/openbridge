@@ -29,6 +29,30 @@ uv run openbridge
 
 The server starts at `http://127.0.0.1:8000`.
 
+### Run with Docker
+
+```bash
+cp .env.example .env
+# edit .env and set OPENROUTER_API_KEY=...
+docker compose up --build
+```
+
+The server starts at `http://127.0.0.1:8000`.
+
+To enable Redis-backed state/trace:
+
+```bash
+OPENBRIDGE_STATE_BACKEND=redis OPENBRIDGE_TRACE_BACKEND=redis \
+  docker compose --profile redis up --build
+```
+
+Alternatively, run without Compose:
+
+```bash
+docker build -t openbridge .
+docker run --rm -p 8000:8000 -e OPENROUTER_API_KEY="sk-or-..." openbridge
+```
+
 ### Send a minimal request
 
 ```bash
