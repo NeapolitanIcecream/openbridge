@@ -1,10 +1,12 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.12-slim AS base
+# Keep the base image Python aligned with `.python-version` so uv uses system Python.
+FROM python:3.14-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    UV_NO_MANAGED_PYTHON=1
 
 # Install system certificates for outbound HTTPS (OpenRouter).
 RUN apt-get update \
