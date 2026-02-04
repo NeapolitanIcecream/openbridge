@@ -39,6 +39,10 @@ docker compose up --build
 
 The server starts at `http://127.0.0.1:8000`.
 
+Note: the provided `docker-compose.yml` publishes the port to **localhost only**. This
+matches OpenBridge's single-machine usage model. If you intentionally expose it to your
+network, set `OPENBRIDGE_CLIENT_API_KEY` (or put it behind a reverse proxy with auth).
+
 To enable Redis-backed state/trace:
 
 ```bash
@@ -50,7 +54,7 @@ Alternatively, run without Compose:
 
 ```bash
 docker build -t openbridge .
-docker run --rm -p 8000:8000 -e OPENROUTER_API_KEY="sk-or-..." openbridge
+docker run --rm -p 127.0.0.1:8000:8000 -e OPENROUTER_API_KEY="sk-or-..." openbridge
 ```
 
 ### Send a minimal request
