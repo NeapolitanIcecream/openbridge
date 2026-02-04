@@ -79,6 +79,17 @@ There are two steps:
 - Global: `OPENBRIDGE_TRACE_ENABLED=1` (or `--trace`)
 - Per-request: send `X-OpenBridge-Trace: 1` (or `?openbridge_trace=1`)
 
+### Trace storage backend / retention
+
+Trace capture writes records to the configured trace store:
+
+- `OPENBRIDGE_TRACE_BACKEND`: `memory` (default) | `redis` | `disabled`
+- `OPENBRIDGE_TRACE_TTL_SECONDS` (default: `3600`): use `0` for no expiry
+- `OPENBRIDGE_TRACE_MAX_ENTRIES` (default: `200`): memory backend cap (LRU-ish)
+- `OPENBRIDGE_TRACE_REDIS_URL` (optional): if unset, defaults to `OPENBRIDGE_REDIS_URL`
+
+If `OPENBRIDGE_TRACE_BACKEND=disabled`, no trace bundles are stored.
+
 2) **Optionally log the trace bundle**
 
 - `OPENBRIDGE_TRACE_LOG=1` (or `--trace-log`)

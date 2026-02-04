@@ -22,19 +22,41 @@ want OpenRouter's model catalog without rewriting client code.
 
 ## Quick start
 
-Prerequisites:
+=== "Local (uv)"
 
-- Python 3.12+
-- `uv`
-- An OpenRouter API key (`OPENROUTER_API_KEY`)
+    Prerequisites:
 
-Run:
+    - Python 3.12+
+    - `uv`
+    - An OpenRouter API key (`OPENROUTER_API_KEY`)
 
-```bash
-export OPENROUTER_API_KEY="sk-or-..."
-uv sync
-uv run openbridge
-```
+    Run:
+
+    ```bash
+    export OPENROUTER_API_KEY="sk-or-..."
+    uv sync
+    uv run openbridge
+    ```
+
+=== "Docker (Compose)"
+
+    Prerequisites:
+
+    - Docker
+    - An OpenRouter API key (`OPENROUTER_API_KEY`)
+
+    Run:
+
+    ```bash
+    cp .env.example .env
+    # edit .env and set OPENROUTER_API_KEY=...
+    docker compose up --build
+    ```
+
+    Notes:
+
+    - The server is published to `http://127.0.0.1:8000` by default.
+    - For Redis-backed state/trace, see [Deployment (Docker)](deployment.md).
 
 Then send a minimal request:
 
@@ -50,3 +72,4 @@ curl -sS http://127.0.0.1:8000/v1/responses \
 - [API compatibility](compatibility.md)
 - [Configuration](configuration.md)
 - [Logging & tracing](logging.md)
+- [Deployment (Docker)](deployment.md)

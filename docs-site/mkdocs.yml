@@ -33,3 +33,4 @@ nav:
   - Reference:
       - Configuration: configuration.md
       - Logging & tracing: logging.md
+      - Deployment (Docker): deployment.md

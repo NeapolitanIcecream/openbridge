@@ -48,6 +48,16 @@ Example:
 When state is disabled, `previous_response_id` and `GET/DELETE /v1/responses/{id}` return
 an error.
 
+## Trace storage (optional)
+
+Traces are sanitized **debug bundles** stored by request id (and optionally by response id).
+They can be retrieved via debug endpoints and the CLI viewer.
+
+- `OPENBRIDGE_TRACE_BACKEND`: `memory` (default) | `redis` | `disabled`
+- `OPENBRIDGE_TRACE_REDIS_URL` (optional): if unset, defaults to `OPENBRIDGE_REDIS_URL`
+- `OPENBRIDGE_TRACE_TTL_SECONDS` (default: `3600`): use `0` for no expiry
+- `OPENBRIDGE_TRACE_MAX_ENTRIES` (default: `200`): in-memory cap (LRU-ish); not enforced for Redis
+
 ## Reliability knobs
 
 - `OPENBRIDGE_REQUEST_TIMEOUT_S` (default: `120`)
@@ -70,5 +80,7 @@ Optional:
 
 ## Debugging and tracing
 
-See [Logging & tracing](logging.md) for the trace feature and its environment variables.
+- `OPENBRIDGE_DEBUG_ENDPOINTS` (default: `0`): enable `/v1/debug/*` endpoints (treat as sensitive)
+
+See [Logging & tracing](logging.md) for trace capture and content controls (`OPENBRIDGE_TRACE_*`).
 
