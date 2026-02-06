@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 import httpx
+import orjson
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sse_starlette import EventSourceResponse
@@ -359,6 +360,28 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
                         completed = True
                     elif event_name == "response.failed":
                         failed = True
+                        try:
+                            raw = event.get("data")
+                            if isinstance(raw, str) and raw:
+                                payload = orjson.loads(raw)
+                                err = payload.get("error") if isinstance(payload, dict) else None
+                                if isinstance(err, dict):
+                                    msg = err.get("message")
+                                    err_type = err.get("type")
+                                    if isinstance(msg, str) and msg:
+                                        req_logger.warning(
+                                            "Streaming failed: {} (type={})",
+                                            msg,
+                                            err_type or "-",
+                                        )
+                                    else:
+                                        req_logger.warning("Streaming failed")
+                                else:
+                                    req_logger.warning("Streaming failed")
+                            else:
+                                req_logger.warning("Streaming failed")
+                        except Exception:  # noqa: BLE001
+                            req_logger.warning("Streaming failed")
                     yield event
             except asyncio.CancelledError:
                 cancelled = True
@@ -562,15 +585,36 @@ def _upstream_error_response(response) -> JSONResponse:
         data = response.json()
     except ValueError:
         data = {}
-    error_data = data.get("error", {}) if isinstance(data, dict) else {}
+    raw_error = data.get("error") if isinstance(data, dict) else None
+    error_data = raw_error if isinstance(raw_error, dict) else {}
+
     message = error_data.get("message") or response.text
-    error_type = error_data.get("type") or "invalid_request_error"
+
+    raw_type = error_data.get("type")
+    if isinstance(raw_type, str) and raw_type:
+        error_type = raw_type
+    elif response.status_code in (401, 403):
+        error_type = "authentication_error"
+    elif response.status_code == 429:
+        error_type = "rate_limit_error"
+    elif response.status_code >= 500:
+        error_type = "server_error"
+    else:
+        error_type = "invalid_request_error"
+
+    param = error_data.get("param")
+    if param is not None and not isinstance(param, str):
+        param = str(param)
+
+    code = error_data.get("code")
+    if code is not None and not isinstance(code, str):
+        code = str(code)
     error = ErrorResponse(
         error=ErrorDetail(
-            message=message,
-            type=error_type,
-            param=error_data.get("param"),
-            code=error_data.get("code"),
+            message=str(message),
+            type=str(error_type),
+            param=param,
+            code=code,
         )
     )
     return JSONResponse(status_code=response.status_code, content=error.model_dump())

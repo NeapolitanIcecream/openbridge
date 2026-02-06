@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 from loguru import logger
 from rich.console import Console
 from rich.text import Text
@@ -39,7 +41,11 @@ def _level_style(level_name: str) -> str:
 
 
 def setup_logging(level: str, *, log_file: str | None = None) -> None:
-    console = Console()
+    # Rich defaults to a small width (typically 80) when stdout is not a TTY.
+    # In Docker log pipes this would crop messages with overflow="ellipsis".
+    # Prefer a large width so the full line is emitted and the host log viewer wraps naturally.
+    is_tty = bool(getattr(sys.stdout, "isatty", lambda: False)())
+    console = Console(width=None if is_tty else 10_000)
     install_rich_traceback(console=console, show_locals=False)
     logger.remove()
     logger.configure(extra={"request_id": "-", "upstream_request_id": "-"})
