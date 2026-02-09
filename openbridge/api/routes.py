@@ -364,7 +364,11 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
                             raw = event.get("data")
                             if isinstance(raw, str) and raw:
                                 payload = orjson.loads(raw)
-                                err = payload.get("error") if isinstance(payload, dict) else None
+                                err = (
+                                    payload.get("error")
+                                    if isinstance(payload, dict)
+                                    else None
+                                )
                                 if isinstance(err, dict):
                                     msg = err.get("message")
                                     err_type = err.get("type")
