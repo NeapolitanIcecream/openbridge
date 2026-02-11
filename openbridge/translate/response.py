@@ -6,6 +6,8 @@ from openbridge.models.chat import ChatCompletionResponse
 from openbridge.models.responses import (
     ResponseOutputItem,
     ResponseOutputText,
+    ResponseTextConfig,
+    ResponseTextFormat,
     ResponsesCreateResponse,
 )
 from openbridge.tools.registry import ToolVirtualizationResult
@@ -20,9 +22,13 @@ def chat_response_to_responses(
     tool_map: ToolVirtualizationResult,
     response_id: str | None = None,
     created_at: int | None = None,
+    completed_at: int | None = None,
+    request: Any | None = None,
+    store: bool | None = None,
 ) -> ResponsesCreateResponse:
     response_id = response_id or new_id("resp")
     created_at = created_at or now_ts()
+    completed_at = completed_at or created_at
     output: list[ResponseOutputItem] = []
 
     message = None
@@ -42,12 +48,59 @@ def chat_response_to_responses(
     if message and message.content:
         output.append(_text_to_output_item(message.content))
 
+    # Best-effort: include commonly expected Response object fields for strict clients.
+    instructions = (
+        getattr(request, "instructions", None) if request is not None else None
+    )
+    max_output_tokens = (
+        getattr(request, "max_output_tokens", None) if request is not None else None
+    )
+    parallel_tool_calls = (
+        getattr(request, "parallel_tool_calls", None) if request is not None else None
+    )
+    if parallel_tool_calls is None and request is not None:
+        parallel_tool_calls = True
+    previous_response_id = (
+        getattr(request, "previous_response_id", None) if request is not None else None
+    )
+    temperature = getattr(request, "temperature", None) if request is not None else None
+    if temperature is None and request is not None:
+        temperature = 1.0
+    top_p = getattr(request, "top_p", None) if request is not None else None
+    if top_p is None and request is not None:
+        top_p = 1.0
+    tool_choice = getattr(request, "tool_choice", None) if request is not None else None
+    if tool_choice is None and request is not None:
+        tool_choice = "auto"
+    tools = getattr(request, "tools", None) if request is not None else None
+    if tools is None and request is not None:
+        tools = []
+    text = getattr(request, "text", None) if request is not None else None
+    if text is None:
+        text = ResponseTextConfig(format=ResponseTextFormat(type="text", schema=None))
+
     return ResponsesCreateResponse(
         id=response_id,
         created_at=created_at,
+        status="completed",
+        completed_at=completed_at,
+        error=None,
+        incomplete_details=None,
+        instructions=instructions,
+        max_output_tokens=max_output_tokens,
         model=model,
         output=output,
+        parallel_tool_calls=parallel_tool_calls,
+        previous_response_id=previous_response_id,
+        store=store,
+        temperature=temperature,
+        top_p=top_p,
+        tool_choice=tool_choice,
+        tools=tools,
+        text=text,
+        truncation="disabled",
         usage=normalize_responses_usage(chat_response.usage),
+        metadata=getattr(request, "metadata", None) if request is not None else {},
     )
 
 
@@ -92,7 +145,9 @@ def _maybe_reasoning_to_output_item(message: Any) -> ResponseOutputItem | None:
     if not extra:
         return None
 
-    return ResponseOutputItem(id=new_id("item"), type="reasoning", **extra)
+    return ResponseOutputItem(
+        id=new_id("item"), type="reasoning", status="completed", **extra
+    )
 
 
 def _tool_call_to_output_item(
@@ -109,6 +164,7 @@ def _tool_call_to_output_item(
     return ResponseOutputItem(
         id=new_id("item"),
         type=item_type,
+        status="completed",
         call_id=tool_call.id,
         name=name,
         arguments=tool_call.function.arguments,
@@ -119,8 +175,9 @@ def _text_to_output_item(content: Any) -> ResponseOutputItem:
     if not isinstance(content, str):
         content = str(content)
     return ResponseOutputItem(
-        id=new_id("item"),
+        id=new_id("msg"),
         type="message",
+        status="completed",
         role="assistant",
         content=[ResponseOutputText(text=content)],
     )

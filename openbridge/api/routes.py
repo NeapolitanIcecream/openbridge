@@ -344,6 +344,8 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
             response_id=response_id,
             created_at=created_at,
             settings=settings,
+            responses_request=payload,
+            store=bool(state_store is not None and payload.store is not False),
             on_upstream_request_id=on_upstream_request_id,
             on_upstream_stats=on_upstream_stats,
             on_complete=on_complete,
@@ -364,14 +366,19 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
                             raw = event.get("data")
                             if isinstance(raw, str) and raw:
                                 payload = orjson.loads(raw)
-                                err = (
-                                    payload.get("error")
+                                resp_obj = (
+                                    payload.get("response")
                                     if isinstance(payload, dict)
+                                    else None
+                                )
+                                err = (
+                                    resp_obj.get("error")
+                                    if isinstance(resp_obj, dict)
                                     else None
                                 )
                                 if isinstance(err, dict):
                                     msg = err.get("message")
-                                    err_type = err.get("type")
+                                    err_type = err.get("code") or err.get("type")
                                     if isinstance(msg, str) and msg:
                                         req_logger.warning(
                                             "Streaming failed: {} (type={})",
@@ -486,6 +493,9 @@ async def create_response(request: Request, payload: ResponsesCreateRequest):
             tool_map=tool_map,
             response_id=response_id,
             created_at=created_at,
+            completed_at=now_ts(),
+            request=payload,
+            store=bool(state_store is not None and payload.store is not False),
         )
         return chat_response, responses
 

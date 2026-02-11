@@ -27,7 +27,10 @@ from openbridge.models.chat import (
 )
 from openbridge.models.events import (
     ResponseCompletedEvent,
+    ResponseContentPartAddedEvent,
+    ResponseContentPartDoneEvent,
     ResponseCreatedEvent,
+    ResponseInProgressEvent,
     ResponseFailedEvent,
     ResponseFunctionCallArgumentsDeltaEvent,
     ResponseFunctionCallArgumentsDoneEvent,
@@ -39,12 +42,16 @@ from openbridge.models.events import (
 from openbridge.models.responses import (
     ResponseOutputItem,
     ResponseOutputText,
+    ResponsesCreateRequest,
+    ResponseStatus,
+    ResponseTextConfig,
+    ResponseTextFormat,
     ResponsesCreateResponse,
 )
 from openbridge.services import apply_degrade_fields, extract_error_message
 from openbridge.tools.registry import ToolVirtualizationResult
 from openbridge.usage import normalize_responses_usage
-from openbridge.utils import json_dumps, new_id
+from openbridge.utils import json_dumps, new_id, now_ts
 
 
 class ChatCompletionsSSEClient(Protocol):
@@ -72,6 +79,8 @@ class ResponsesStreamTranslator:
         model: str,
         created_at: int,
         tool_map: ToolVirtualizationResult,
+        responses_request: ResponsesCreateRequest | None = None,
+        store: bool | None = None,
     ) -> None:
         self._response_id = response_id
         self._model = model
@@ -86,18 +95,102 @@ class ResponsesStreamTranslator:
         self._reasoning_detail_map: dict[str, dict[str, Any]] = {}
         self._assistant_reasoning: str | None = None
         self._usage: dict[str, Any] | None = None
+        self._sequence_number: int = 0
+        self._final_status: ResponseStatus | None = None
+        self._final_completed_at: int | None = None
+        self._final_error: dict[str, Any] | None = None
+
+        # Copy selected request fields into the Response object for strict clients.
+        self._instructions = (
+            responses_request.instructions if responses_request is not None else None
+        )
+        self._max_output_tokens = (
+            responses_request.max_output_tokens
+            if responses_request is not None
+            else None
+        )
+        self._parallel_tool_calls = (
+            responses_request.parallel_tool_calls
+            if responses_request is not None
+            else None
+        )
+        if self._parallel_tool_calls is None and responses_request is not None:
+            self._parallel_tool_calls = True
+        self._previous_response_id = (
+            responses_request.previous_response_id
+            if responses_request is not None
+            else None
+        )
+        self._temperature = (
+            responses_request.temperature if responses_request is not None else None
+        )
+        if self._temperature is None and responses_request is not None:
+            self._temperature = 1.0
+        self._top_p = responses_request.top_p if responses_request is not None else None
+        if self._top_p is None and responses_request is not None:
+            self._top_p = 1.0
+        self._tool_choice = (
+            responses_request.tool_choice if responses_request is not None else None
+        )
+        if self._tool_choice is None and responses_request is not None:
+            self._tool_choice = "auto"
+        self._tools = responses_request.tools if responses_request is not None else None
+        if self._tools is None and responses_request is not None:
+            self._tools = []
+        self._metadata = (
+            responses_request.metadata if responses_request is not None else None
+        )
+        if self._metadata is None and responses_request is not None:
+            self._metadata = {}
+        self._reasoning_cfg = (
+            getattr(responses_request, "reasoning", None)
+            if responses_request is not None
+            else None
+        )
+        text = responses_request.text if responses_request is not None else None
+        if text is None:
+            text = ResponseTextConfig(
+                format=ResponseTextFormat(type="text", schema=None)
+            )
+        self._text_cfg = text
+
+        if store is not None:
+            self._store = bool(store)
+        elif responses_request is not None:
+            self._store = (
+                True
+                if responses_request.store is None
+                else bool(responses_request.store)
+            )
+        else:
+            self._store = None
 
     def set_usage(self, usage: dict[str, Any] | None) -> None:
         if not isinstance(usage, dict):
             return
         self._usage = usage
 
+    def _next_seq(self) -> int:
+        self._sequence_number += 1
+        return self._sequence_number
+
     def start_events(self) -> list[dict[str, Any]]:
-        response = self._build_response()
+        response = self._build_response(
+            status="in_progress", completed_at=None, error=None
+        )
         return [
             _event(
-                "response.created", ResponseCreatedEvent(response=response).model_dump()
-            )
+                "response.created",
+                ResponseCreatedEvent(
+                    response=response, sequence_number=self._next_seq()
+                ).model_dump(),
+            ),
+            _event(
+                "response.in_progress",
+                ResponseInProgressEvent(
+                    response=response, sequence_number=self._next_seq()
+                ).model_dump(),
+            ),
         ]
 
     def process_chunk(self, chunk: dict[str, Any]) -> list[dict[str, Any]]:
@@ -134,32 +227,59 @@ class ResponsesStreamTranslator:
                     setattr(item, "summary", summary_parts)
             if self._assistant_reasoning:
                 setattr(item, "openrouter_reasoning", self._assistant_reasoning)
+            item.status = "completed"
             events.append(
                 _event(
                     "response.output_item.done",
                     ResponseOutputItemDoneEvent(
-                        output_index=self._reasoning_output_index, item=item
+                        output_index=self._reasoning_output_index,
+                        item=item,
+                        sequence_number=self._next_seq(),
                     ).model_dump(),
                 )
             )
 
         if self._text_output_index is not None:
+            item = self._output_items[self._text_output_index]
+            item_id = item.id
             events.append(
                 _event(
                     "response.output_text.done",
                     ResponseOutputTextDoneEvent(
+                        item_id=item_id,
                         output_index=self._text_output_index,
                         content_index=0,
                         text=self._text_content,
+                        sequence_number=self._next_seq(),
                     ).model_dump(),
                 )
             )
-            item = self._output_items[self._text_output_index]
+            events.append(
+                _event(
+                    "response.content_part.done",
+                    ResponseContentPartDoneEvent(
+                        item_id=item_id,
+                        output_index=self._text_output_index,
+                        content_index=0,
+                        part=(
+                            item.content[0].model_dump()
+                            if item.content
+                            else ResponseOutputText(
+                                text=self._text_content
+                            ).model_dump()
+                        ),
+                        sequence_number=self._next_seq(),
+                    ).model_dump(),
+                )
+            )
+            item.status = "completed"
             events.append(
                 _event(
                     "response.output_item.done",
                     ResponseOutputItemDoneEvent(
-                        output_index=self._text_output_index, item=item
+                        output_index=self._text_output_index,
+                        item=item,
+                        sequence_number=self._next_seq(),
                     ).model_dump(),
                 )
             )
@@ -170,40 +290,65 @@ class ResponsesStreamTranslator:
             if state.output_index is not None
         ]
         for output_index, state in sorted(tool_states, key=lambda entry: entry[0]):
+            item = self._output_items[int(output_index)]
+            item_id = item.id
             events.append(
                 _event(
                     "response.function_call_arguments.done",
                     ResponseFunctionCallArgumentsDoneEvent(
-                        output_index=output_index,
+                        item_id=item_id,
+                        output_index=int(output_index),
                         arguments=state.arguments,
+                        sequence_number=self._next_seq(),
                     ).model_dump(),
                 )
             )
-            item = self._output_items[output_index]
+            item.status = "completed"
             events.append(
                 _event(
                     "response.output_item.done",
                     ResponseOutputItemDoneEvent(
-                        output_index=output_index,
+                        output_index=int(output_index),
                         item=item,
+                        sequence_number=self._next_seq(),
                     ).model_dump(),
                 )
             )
 
-        response = self._build_response()
+        completed_at = now_ts()
+        self._final_status = "completed"
+        self._final_completed_at = completed_at
+        self._final_error = None
+        response = self._build_response(
+            status="completed", completed_at=completed_at, error=None
+        )
         events.append(
             _event(
                 "response.completed",
-                ResponseCompletedEvent(response=response).model_dump(),
+                ResponseCompletedEvent(
+                    response=response, sequence_number=self._next_seq()
+                ).model_dump(),
             )
         )
         return events
 
     def failure_event(self, error: dict[str, Any]) -> dict[str, Any]:
-        response = self._build_response()
+        code = error.get("code") or error.get("type") or "server_error"
+        message = error.get("message") or str(error)
+        err_obj = {"code": str(code), "message": str(message)}
+
+        self._final_status = "failed"
+        self._final_completed_at = None
+        self._final_error = err_obj
+
+        response = self._build_response(
+            status="failed", completed_at=None, error=err_obj
+        )
         return _event(
             "response.failed",
-            ResponseFailedEvent(response=response, error=error).model_dump(),
+            ResponseFailedEvent(
+                response=response, sequence_number=self._next_seq()
+            ).model_dump(),
         )
 
     def assistant_message(self) -> ChatMessage | None:
@@ -242,7 +387,12 @@ class ResponsesStreamTranslator:
         return msg
 
     def final_response(self) -> ResponsesCreateResponse:
-        return self._build_response()
+        status = self._final_status or "in_progress"
+        return self._build_response(
+            status=status,
+            completed_at=self._final_completed_at,
+            error=self._final_error,
+        )
 
     def _handle_text_delta(self, delta: str) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
@@ -252,8 +402,9 @@ class ResponsesStreamTranslator:
             return events
         if self._text_output_index is None:
             item = ResponseOutputItem(
-                id=new_id("item"),
+                id=new_id("msg"),
                 type="message",
+                status="in_progress",
                 role="assistant",
                 content=[ResponseOutputText(text="")],
             )
@@ -263,7 +414,25 @@ class ResponsesStreamTranslator:
                 _event(
                     "response.output_item.added",
                     ResponseOutputItemAddedEvent(
-                        output_index=self._text_output_index, item=item
+                        output_index=self._text_output_index,
+                        item=item,
+                        sequence_number=self._next_seq(),
+                    ).model_dump(),
+                )
+            )
+            events.append(
+                _event(
+                    "response.content_part.added",
+                    ResponseContentPartAddedEvent(
+                        item_id=item.id,
+                        output_index=self._text_output_index,
+                        content_index=0,
+                        part=(
+                            item.content[0].model_dump()
+                            if item.content
+                            else ResponseOutputText(text="").model_dump()
+                        ),
+                        sequence_number=self._next_seq(),
                     ).model_dump(),
                 )
             )
@@ -276,9 +445,11 @@ class ResponsesStreamTranslator:
             _event(
                 "response.output_text.delta",
                 ResponseOutputTextDeltaEvent(
+                    item_id=item.id,
                     output_index=self._text_output_index,
                     content_index=0,
                     delta=delta,
+                    sequence_number=self._next_seq(),
                 ).model_dump(),
             )
         )
@@ -318,8 +489,10 @@ class ResponsesStreamTranslator:
                         _event(
                             "response.function_call_arguments.delta",
                             ResponseFunctionCallArgumentsDeltaEvent(
+                                item_id=item.id,
                                 output_index=int(state.output_index),
                                 delta=arguments_delta,
+                                sequence_number=self._next_seq(),
                             ).model_dump(),
                         )
                     )
@@ -333,14 +506,18 @@ class ResponsesStreamTranslator:
 
         events: list[dict[str, Any]] = []
         if self._reasoning_output_index is None:
-            item = ResponseOutputItem(id=new_id("item"), type="reasoning")
+            item = ResponseOutputItem(
+                id=new_id("item"), type="reasoning", status="in_progress"
+            )
             self._reasoning_output_index = len(self._output_items)
             self._output_items.append(item)
             events.append(
                 _event(
                     "response.output_item.added",
                     ResponseOutputItemAddedEvent(
-                        output_index=self._reasoning_output_index, item=item
+                        output_index=self._reasoning_output_index,
+                        item=item,
+                        sequence_number=self._next_seq(),
                     ).model_dump(),
                 )
             )
@@ -403,6 +580,7 @@ class ResponsesStreamTranslator:
         item = ResponseOutputItem(
             id=new_id("item"),
             type=item_type,
+            status="in_progress",
             call_id=state.call_id,
             name=item_name,
             arguments="",
@@ -415,7 +593,9 @@ class ResponsesStreamTranslator:
             _event(
                 "response.output_item.added",
                 ResponseOutputItemAddedEvent(
-                    output_index=output_index, item=item
+                    output_index=output_index,
+                    item=item,
+                    sequence_number=self._next_seq(),
                 ).model_dump(),
             )
         ]
@@ -427,8 +607,10 @@ class ResponsesStreamTranslator:
                     _event(
                         "response.function_call_arguments.delta",
                         ResponseFunctionCallArgumentsDeltaEvent(
+                            item_id=item.id,
                             output_index=output_index,
                             delta=delta,
+                            sequence_number=self._next_seq(),
                         ).model_dump(),
                     )
                 )
@@ -436,13 +618,38 @@ class ResponsesStreamTranslator:
 
         return events
 
-    def _build_response(self) -> ResponsesCreateResponse:
+    def _build_response(
+        self,
+        *,
+        status: ResponseStatus,
+        completed_at: int | None,
+        error: dict[str, Any] | None,
+    ) -> ResponsesCreateResponse:
         return ResponsesCreateResponse(
             id=self._response_id,
             created_at=self._created_at,
+            status=status,
+            completed_at=completed_at,
+            error=error,
+            incomplete_details=None,
+            instructions=self._instructions,
+            max_output_tokens=self._max_output_tokens,
             model=self._model,
             output=list(self._output_items),
+            parallel_tool_calls=self._parallel_tool_calls,
+            previous_response_id=self._previous_response_id,
+            reasoning=self._reasoning_cfg
+            if isinstance(self._reasoning_cfg, dict)
+            else None,
+            store=self._store,
+            temperature=self._temperature,
+            top_p=self._top_p,
+            tool_choice=self._tool_choice,
+            tools=self._tools,
+            text=self._text_cfg,
+            truncation="disabled",
             usage=self._usage,
+            metadata=self._metadata,
         )
 
 
@@ -454,6 +661,8 @@ async def stream_responses_events(
     response_id: str,
     created_at: int,
     settings: Settings,
+    responses_request: ResponsesCreateRequest | None = None,
+    store: bool | None = None,
     on_upstream_request_id: Callable[[str | None], Awaitable[None]] | None = None,
     on_upstream_stats: Callable[[dict[str, Any] | None, str | None], Awaitable[None]]
     | None = None,
@@ -468,6 +677,8 @@ async def stream_responses_events(
         model=chat_request.model,
         created_at=created_at,
         tool_map=tool_map,
+        responses_request=responses_request,
+        store=store,
     )
     started = False
     finish_reason: str | None = None
