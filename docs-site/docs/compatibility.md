@@ -13,6 +13,13 @@ This page documents the compatibility surface that is intentionally supported to
 - `GET /healthz`, `GET /version`, `GET /metrics`
 - Debug endpoints under `/v1/debug/*` (optional, disabled by default)
 
+### Codex CLI provider config
+
+For Codex CLI custom providers, use:
+
+- `base_url` ending with `/v1` (for example `http://127.0.0.1:8000/v1`)
+- `wire_api = "responses"`
+
 ## Compatibility levels (mental model)
 
 - **Level 0 (most robust)**: text-only, `input` is a string, no tools, no streaming.

@@ -130,6 +130,23 @@ def test_streaming_ignores_empty_text_delta():
     assert not [item for item in final.output if item.type == "message"]
 
 
+def test_streaming_ignores_keepalive_chunk_with_null_choices():
+    """Regression: keepalive-like chunks with choices=null must be a no-op."""
+    tool_map = ToolVirtualizationResult(
+        chat_tools=[], function_name_map={}, external_name_map={}
+    )
+    translator = ResponsesStreamTranslator(
+        response_id="resp_keepalive",
+        model="openai/gpt-4.1",
+        created_at=1,
+        tool_map=tool_map,
+    )
+
+    events = translator.process_chunk({"type": "response.keepalive", "choices": None})
+
+    assert events == []
+
+
 def test_streaming_tool_call_id_late():
     tool_map = ToolVirtualizationResult(
         chat_tools=[],

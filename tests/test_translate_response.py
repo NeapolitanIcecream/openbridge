@@ -5,6 +5,7 @@ from openbridge.models.chat import (
     ChatToolCallFunction,
     ChatCompletionChoice,
 )
+from openbridge.models.responses import ResponsesCreateRequest
 from openbridge.translate.response import chat_response_to_responses
 from openbridge.tools.registry import ToolVirtualizationResult
 
@@ -231,3 +232,22 @@ def test_chat_response_generates_ids_when_not_provided():
 
     assert responses.id.startswith("resp_")
     assert responses.created_at > 0
+
+
+def test_chat_response_metadata_defaults_to_empty_object_when_request_omits_it():
+    """Regression: responses metadata should default to {} for strict clients."""
+    tool_map = ToolVirtualizationResult(
+        chat_tools=[], function_name_map={}, external_name_map={}
+    )
+    chat_response = ChatCompletionResponse(
+        choices=[
+            ChatCompletionChoice(message=ChatMessage(role="assistant", content="Hi"))
+        ]
+    )
+    request = ResponsesCreateRequest(model="openai/gpt-4.1", input="Hello")
+
+    responses = chat_response_to_responses(
+        chat_response, model="openai/gpt-4.1", tool_map=tool_map, request=request
+    )
+
+    assert responses.metadata == {}

@@ -73,6 +73,18 @@ curl -sS http://127.0.0.1:8000/v1/responses \
 Point your client’s base URL to `http://127.0.0.1:8000` and keep calling
 `POST /v1/responses` as usual.
 
+### Use it from Codex CLI (`wire_api="responses"`)
+
+When defining a custom Codex provider, set `base_url` to the OpenBridge `/v1`
+prefix and use `wire_api='responses'`:
+
+```bash
+codex exec \
+  -c "model_providers.openbridge={ name = 'OpenBridge', base_url = 'http://127.0.0.1:8000/v1', wire_api='responses' }" \
+  -c "model_provider='openbridge'" \
+  "Reply with OK"
+```
+
 ## Install as a CLI (optional)
 
 ```bash

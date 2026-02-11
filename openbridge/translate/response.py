@@ -78,6 +78,9 @@ def chat_response_to_responses(
     text = getattr(request, "text", None) if request is not None else None
     if text is None:
         text = ResponseTextConfig(format=ResponseTextFormat(type="text", schema=None))
+    metadata = getattr(request, "metadata", None) if request is not None else None
+    if metadata is None:
+        metadata = {}
 
     return ResponsesCreateResponse(
         id=response_id,
@@ -100,7 +103,7 @@ def chat_response_to_responses(
         text=text,
         truncation="disabled",
         usage=normalize_responses_usage(chat_response.usage),
-        metadata=getattr(request, "metadata", None) if request is not None else {},
+        metadata=metadata,
     )
 
 

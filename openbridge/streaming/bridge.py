@@ -196,8 +196,14 @@ class ResponsesStreamTranslator:
     def process_chunk(self, chunk: dict[str, Any]) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
         choices = chunk.get("choices", [])
+        if not isinstance(choices, list):
+            return events
         for choice in choices:
+            if not isinstance(choice, dict):
+                continue
             delta = choice.get("delta", {})
+            if not isinstance(delta, dict):
+                continue
             if "content" in delta and delta["content"] is not None:
                 events.extend(self._handle_text_delta(delta["content"]))
             if "tool_calls" in delta and delta["tool_calls"]:
@@ -777,49 +783,51 @@ async def stream_responses_events(
                             if sse.data == "[DONE]":
                                 break
                             chunk = json.loads(sse.data)
-                            if isinstance(chunk, dict):
-                                if isinstance(chunk.get("usage"), dict):
-                                    raw_usage = dict(chunk["usage"])
-                                    last_usage = raw_usage
-                                    translator.set_usage(
-                                        normalize_responses_usage(raw_usage)
-                                    )
-                                    if on_upstream_stats is not None:
-                                        await on_upstream_stats(
-                                            raw_usage, finish_reason
-                                        )
+                            if not isinstance(chunk, dict):
+                                # Ignore non-object frames defensively.
+                                continue
 
-                                choices = chunk.get("choices")
-                                if isinstance(choices, list):
-                                    for choice in choices:
-                                        if not isinstance(choice, dict):
-                                            continue
-                                        fr = choice.get("finish_reason")
-                                        if isinstance(fr, str) and fr:
-                                            finish_reason = fr
-                                            if on_upstream_stats is not None:
-                                                await on_upstream_stats(
-                                                    last_usage, finish_reason
-                                                )
+                            if isinstance(chunk.get("usage"), dict):
+                                raw_usage = dict(chunk["usage"])
+                                last_usage = raw_usage
+                                translator.set_usage(
+                                    normalize_responses_usage(raw_usage)
+                                )
+                                if on_upstream_stats is not None:
+                                    await on_upstream_stats(raw_usage, finish_reason)
 
-                                # OpenRouter can send mid-stream errors as a final chunk with
-                                # finish_reason="error" and a top-level `error` object.
-                                if isinstance(chunk.get("error"), dict):
-                                    error_obj = chunk["error"]
-                                    error_message = error_obj.get("message") or str(
-                                        error_obj
-                                    )
-                                    if not started:
-                                        for event in translator.start_events():
-                                            started = True
-                                            yield event
-                                    yield translator.failure_event(
-                                        {
-                                            "message": str(error_message),
-                                            "type": "upstream_error",
-                                        }
-                                    )
-                                    return
+                            choices = chunk.get("choices")
+                            if isinstance(choices, list):
+                                for choice in choices:
+                                    if not isinstance(choice, dict):
+                                        continue
+                                    fr = choice.get("finish_reason")
+                                    if isinstance(fr, str) and fr:
+                                        finish_reason = fr
+                                        if on_upstream_stats is not None:
+                                            await on_upstream_stats(
+                                                last_usage, finish_reason
+                                            )
+
+                            # OpenRouter can send mid-stream errors as a final chunk with
+                            # finish_reason="error" and a top-level `error` object.
+                            if isinstance(chunk.get("error"), dict):
+                                error_obj = chunk["error"]
+                                error_message = error_obj.get("message") or str(
+                                    error_obj
+                                )
+                                if not started:
+                                    for event in translator.start_events():
+                                        started = True
+                                        yield event
+                                yield translator.failure_event(
+                                    {
+                                        "message": str(error_message),
+                                        "type": "upstream_error",
+                                    }
+                                )
+                                return
+
                             for event in translator.process_chunk(chunk):
                                 yield event
                     break
