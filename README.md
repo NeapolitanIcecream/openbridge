@@ -2,7 +2,7 @@
 
 ![OpenAI Responses API aligned (2026.02.11)](https://img.shields.io/badge/OpenAI%20Responses%20API-aligned%202026.02.11-brightgreen)
 ![OpenRouter Chat Completions API aligned (2026.02.11)](https://img.shields.io/badge/OpenRouter%20Chat%20Completions%20API-aligned%202026.02.11-brightgreen)
-![Codex CLI 0.98.0 compatible](https://img.shields.io/badge/Codex%20CLI-0.98.0-compatible-brightgreen)
+![Codex CLI 0.98.0 compatible](https://img.shields.io/badge/Codex%20CLI-0.98.0%20compatible-brightgreen)
 
 **Compatibility (verified 2026-02-11):** OpenAI Responses API (`POST /v1/responses`) · OpenRouter Chat Completions API · Codex CLI 0.98.0
 
