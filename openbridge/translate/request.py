@@ -39,12 +39,24 @@ def load_model_map(path: Path | None) -> dict[str, str]:
         return {}
     if path in _model_map_cache:
         return _model_map_cache[path]
+
     if not path.exists():
-        _model_map_cache[path] = {}
-        return {}
-    data = json.loads(path.read_text(encoding="utf-8"))
+        raise ValueError(f"Model map file not found: {path}")
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"Failed to read model map file: {path}") from exc
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        location = f"line {exc.lineno} column {exc.colno}"
+        raise ValueError(
+            f"Failed to parse model map JSON: {path} ({location})"
+        ) from exc
     if not isinstance(data, dict):
-        raise ValueError("Model map must be a JSON object")
+        raise ValueError(f"Model map must be a JSON object: {path}")
     _model_map_cache[path] = {str(k): str(v) for k, v in data.items()}
     return _model_map_cache[path]
 

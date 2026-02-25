@@ -1,5 +1,8 @@
 import json
+from pathlib import Path
 from typing import Any
+
+import pytest
 
 from openbridge.models.responses import InputItem
 from openbridge.models.responses import ResponsesCreateRequest
@@ -144,3 +147,23 @@ def test_translate_request_passthrough_reasoning_config():
     settings = settings_cls(OPENROUTER_API_KEY="test")
     tr = translate_request(settings, req, registry, history_messages=[])
     assert tr.chat_request.reasoning == {"effort": "high"}
+
+
+def test_translate_request_fails_fast_on_invalid_model_map_json(tmp_path: Path):
+    registry = ToolRegistry.default_registry()
+    bad_map = tmp_path / "model_map.json"
+    bad_map.write_text("{not-json}", encoding="utf-8")
+
+    req = ResponsesCreateRequest.model_validate(
+        {"model": "gpt-5.2-codex", "input": "ping"}
+    )
+
+    from openbridge.config import Settings
+
+    settings_cls: Any = Settings
+    settings = settings_cls(
+        OPENROUTER_API_KEY="test", OPENBRIDGE_MODEL_MAP_PATH=str(bad_map)
+    )
+
+    with pytest.raises(ValueError, match=r"Failed to parse model map JSON"):
+        translate_request(settings, req, registry, history_messages=[])
